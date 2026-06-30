@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "ultramemory": {
+      "url": "https://api.ultramemory.us/mcp",
+      "headers": {
+        "Authorization": "Bearer um_YOUR_KEY"
+      }
+    }
+  }
+}
