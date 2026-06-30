@@ -1,0 +1,12 @@
+# Python build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+# Env / secrets — never commit
+.env
+.env.*
+# OS
+.DS_Store

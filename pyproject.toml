@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Distribution name is `ultramemory-hermes` (the bare `ultramemory` is taken on PyPI by an
+# unrelated project). The IMPORT package and the console script stay `ultramemory` (see
+# [project.scripts], [project.entry-points], and the wheel force-include below) — only the
+# published distribution name differs, so `pip install ultramemory-hermes` gives you the
+# `ultramemory` module + `ultramemory` command the rest of the docs reference.
+[project]
+name = "ultramemory-hermes"
+version = "1.2.0"
+description = "UltraMemory — self-learning, metamemory-gated long-term memory provider for Hermes Agent (and any MCP client). One API key = your own private tenant."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "UltraMemory", email = "support@ultramemory.us" }]
+keywords = ["hermes", "memory", "agent", "llm", "rag", "metamemory", "mcp"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["httpx"]
+
+[project.urls]
+Homepage = "https://ultramemory.us"
+Documentation = "https://ultramemory.us"
+
+# Console entry point: `ultramemory enable --key um_…`
+[project.scripts]
+ultramemory = "ultramemory.cli:main"
+
+# Hermes discovers providers via the `register(ctx)` entry point. Hermes' own discovery mechanism
+# isn't published in this repo, so this group name is an ASSUMPTION ("hermes.memory_providers")
+# chosen to be sensible and namespaced; if Hermes expects a different group, rename this table only
+# — the target `ultramemory:register` is stable. Bundled/copied installs (the README's primary
+# path) don't need this entry point at all; it's for the pip-installed path.
+[project.entry-points."hermes.memory_providers"]
+ultramemory = "ultramemory:register"
+
+# This directory IS the `ultramemory` package (its __init__.py is the module body), but the source
+# files sit flat at the build root rather than in an `ultramemory/` subdir. Map them explicitly
+# into the package path so the wheel installs an importable `ultramemory` package.
+[tool.hatch.build.targets.wheel]
+force-include = { "__init__.py" = "ultramemory/__init__.py", "cli.py" = "ultramemory/cli.py" }
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/__init__.py",
+  "/cli.py",
+  "/plugin.yaml",
+  "/README.md",
+  "/test_provider.py",
+  "/pyproject.toml",
+]
