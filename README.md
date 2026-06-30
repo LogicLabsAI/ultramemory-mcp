@@ -88,6 +88,30 @@ connector. It hooks the agent lifecycle to **auto-inject recall before each turn
 choose to call a tool. Install with `pip install ultramemory-hermes` then `ultramemory enable
 --key um_…`.
 
+## Memory spaces (Teams)
+
+On Teams accounts each member has a **private** member space and the team shares a **shared** space.
+Pick where auto-captured memory lands with `ULTRAMEMORY_SPACE`:
+
+```bash
+export ULTRAMEMORY_SPACE=private   # private = your own member space (default)
+# export ULTRAMEMORY_SPACE=shared  # shared  = the team space
+```
+
+`ULTRAMEMORY_SPACE` (choices `private`|`shared`, default `private`) sets the target space for
+auto-writes (`sync_turn`, `on_memory_write`, `on_session_end`) and the default for the
+`memory_write` tool. Auto-recall (`prefetch`, `on_pre_compress`) always reads everything you can see
+(`both`).
+
+The explicit tools also take an optional per-call `space` arg that overrides the default:
+
+- `memory_write` — `space`: `private` | `shared`.
+- `memory_recall` / `recall_gated` — `space`: `private` | `shared` | `both` (default `both`).
+
+**Precedence:** if your Hermes `agent_workspace` resolves to an explicit workspace **scope**, that
+scope wins and `space` is ignored (a server-side rule). `space` only takes effect for the default
+(non-workspace) scope.
+
 ## Claude Code recall hook
 
 Want deterministic recall in Claude Code without Hermes? Use the

@@ -101,7 +101,7 @@ class _Recorder:
 def _make(monkeypatch, recorder, workspace="Acme Corp/Bot!", **env):
     monkeypatch.setenv("ULTRAMEMORY_API_KEY", env.get("api_key", "um_live_test"))
     monkeypatch.setenv("HERMES_HOME", "/tmp/nonexistent-hermes-home-um-tests")
-    for k in ("gated", "auto_capture", "recall_k", "feedback"):
+    for k in ("gated", "auto_capture", "recall_k", "feedback", "space"):
         if k in env:
             monkeypatch.setenv("ULTRAMEMORY_" + k.upper(), env[k])
     p = um.UltraMemoryProvider()
@@ -210,6 +210,18 @@ def test_tool_schemas_shape(monkeypatch):
     assert {s["name"] for s in schemas} == {"memory_write", "memory_recall", "recall_gated", "playbook_recall", "playbook_outcome"}
     for s in schemas:
         assert s["parameters"]["type"] == "object"
+    by_name = {s["name"]: s for s in schemas}
+    # `space` is exposed on exactly the three space-aware tools, with the right enums, and is OPTIONAL.
+    write = by_name["memory_write"]["parameters"]
+    assert write["properties"]["space"]["enum"] == ["private", "shared"]
+    assert "space" not in write.get("required", [])
+    for name in ("memory_recall", "recall_gated"):
+        params = by_name[name]["parameters"]
+        assert params["properties"]["space"]["enum"] == ["private", "shared", "both"]
+        assert "space" not in params.get("required", [])
+    # …and NOT on the playbook tools (playbook bodies carry no space).
+    assert "space" not in by_name["playbook_recall"]["parameters"]["properties"]
+    assert "space" not in by_name["playbook_outcome"]["parameters"]["properties"]
 
 
 def test_resilient_when_api_down(monkeypatch):
@@ -313,3 +325,57 @@ def test_playbook_outcome_tool_reports_win(monkeypatch):
 def test_playbook_outcome_validation(monkeypatch):
     p = _make(monkeypatch, _Recorder())
     assert "error" in json.loads(p.handle_tool_call("playbook_outcome", {"win": True}))
+
+
+def test_write_body_carries_default_space_private(monkeypatch):
+    """With no `space` config, every auto-write body targets the private member space."""
+    rec = _Recorder()
+    p = _make(monkeypatch, rec)
+    p.sync_turn("hi there", "hello back")
+    assert rec.calls[-1][0] == "/api/v1/permanent"
+    assert rec.calls[-1][1]["space"] == "private"
+
+
+def test_write_body_space_shared_when_configured(monkeypatch):
+    """ULTRAMEMORY_SPACE=shared routes auto-writes to the shared team space."""
+    rec = _Recorder()
+    p = _make(monkeypatch, rec, space="shared")
+    p.sync_turn("hi there", "hello back")
+    assert rec.calls[-1][0] == "/api/v1/permanent"
+    assert rec.calls[-1][1]["space"] == "shared"
+
+
+def test_recall_bodies_carry_space_both(monkeypatch):
+    """Auto-recall always reads everything it can see (space=both) — gated and plain paths."""
+    rec = _Recorder()
+    p = _make(monkeypatch, rec)
+    p.prefetch("what plan is Acme on?")
+    assert rec.calls[-1][0] == "/api/v1/recall/gated"
+    assert rec.calls[-1][1]["space"] == "both"
+
+    rec2 = _Recorder()
+    p2 = _make(monkeypatch, rec2, gated="false")
+    p2.prefetch("plan?")
+    assert rec2.calls[-1][0] == "/api/v1/recall"
+    assert rec2.calls[-1][1]["space"] == "both"
+
+
+def test_tool_space_overrides_and_invalid_fallback(monkeypatch):
+    """The explicit tools accept a per-call `space`; invalid values fall back (write→self._space,
+    recall→both)."""
+    rec = _Recorder()
+    p = _make(monkeypatch, rec)  # default _space == "private"
+    # memory_write tool override → shared
+    p.handle_tool_call("memory_write", {"entity": "Acme", "key": "plan", "value": "Pro", "space": "shared"})
+    assert rec.calls[-1][0] == "/api/v1/permanent"
+    assert rec.calls[-1][1]["space"] == "shared"
+    # memory_recall tool override → private
+    p.handle_tool_call("memory_recall", {"query": "plan?", "space": "private"})
+    assert rec.calls[-1][0] == "/api/v1/recall"
+    assert rec.calls[-1][1]["space"] == "private"
+    # invalid write override falls back to the configured default (private)
+    p.handle_tool_call("memory_write", {"entity": "Acme", "key": "plan", "value": "Pro", "space": "bogus"})
+    assert rec.calls[-1][1]["space"] == "private"
+    # invalid recall override falls back to both
+    p.handle_tool_call("memory_recall", {"query": "plan?", "space": "bogus"})
+    assert rec.calls[-1][1]["space"] == "both"

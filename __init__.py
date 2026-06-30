@@ -17,6 +17,13 @@ chokepoint — we never send a tenant id from here. Hermes' agent_workspace / ag
 to a per-agent `scope` *within* that tenant, so separate agents/workspaces keep separate memory
 under one account. The provider is synchronous (Hermes runs these hooks on its own threads) and
 NEVER raises out of a hook — a memory backend hiccup must not break the agent.
+
+Memory spaces (Teams): orthogonal to `scope`, each tenant has a `private` member space, a `shared`
+team space, and `both` (read across them). `ULTRAMEMORY_SPACE` (private|shared, default private)
+sets the target space for auto-writes and the `memory_write` tool default; auto-recall always reads
+`both`, and the explicit recall tools take an optional `space` (private|shared|both). Precedence is
+a backend rule: an explicit Hermes workspace `scope` takes priority over `space` (space only drives
+resolution when `scope` is the default), so workspace-scoped deployments are unaffected.
 """
 from __future__ import annotations
 
@@ -128,6 +135,11 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
                 "key": {"type": "string", "description": "the attribute / name"},
                 "value": {"type": "string", "description": "the fact itself"},
                 "rationale": {"type": "string", "description": "why it's true or where it came from"},
+                "space": {
+                    "type": "string",
+                    "enum": ["private", "shared"],
+                    "description": "private = your own space (default); shared = the team space",
+                },
             },
             "required": ["entity", "key", "value"],
         },
@@ -140,6 +152,11 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
             "properties": {
                 "query": {"type": "string"},
                 "k": {"type": "integer", "description": "max facts to return (1-100)"},
+                "space": {
+                    "type": "string",
+                    "enum": ["private", "shared", "both"],
+                    "description": "which space to read: private | shared (team) | both (default)",
+                },
             },
             "required": ["query"],
         },
@@ -150,7 +167,15 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "grounded context block. Use when you must not guess — it tells you when memory is unsure.",
         "parameters": {
             "type": "object",
-            "properties": {"query": {"type": "string"}, "k": {"type": "integer"}},
+            "properties": {
+                "query": {"type": "string"},
+                "k": {"type": "integer"},
+                "space": {
+                    "type": "string",
+                    "enum": ["private", "shared", "both"],
+                    "description": "which space to read: private | shared (team) | both (default)",
+                },
+            },
             "required": ["query"],
         },
     },
@@ -186,6 +211,7 @@ class UltraMemoryProvider(MemoryProvider):
     _api_key: str = ""
     _base_url: str = DEFAULT_BASE_URL
     _scope: str = "default"
+    _space: str = "private"
     _recall_k: int = 8
     _gated: bool = True
     _auto_capture: bool = True
@@ -251,6 +277,13 @@ class UltraMemoryProvider(MemoryProvider):
                 "choices": ["true", "false"],
                 "env_var": "ULTRAMEMORY_FEEDBACK",
             },
+            {
+                "key": "space",
+                "description": "Default memory space for writes: private = your own member space; shared = the team space",
+                "default": "private",
+                "choices": ["private", "shared"],
+                "env_var": "ULTRAMEMORY_SPACE",
+            },
         ]
 
     def _hermes_home(self) -> str:
@@ -282,6 +315,7 @@ class UltraMemoryProvider(MemoryProvider):
             ("auto_capture", "ULTRAMEMORY_AUTO_CAPTURE"),
             ("recall_k", "ULTRAMEMORY_RECALL_K"),
             ("feedback", "ULTRAMEMORY_FEEDBACK"),
+            ("space", "ULTRAMEMORY_SPACE"),
         ):
             val = os.environ.get(env)
             if val is not None and val != "":
@@ -300,7 +334,7 @@ class UltraMemoryProvider(MemoryProvider):
                     data = existing
             except Exception:
                 data = {}
-        for key in ("base_url", "gated", "auto_capture", "recall_k", "feedback"):
+        for key in ("base_url", "gated", "auto_capture", "recall_k", "feedback", "space"):
             if values.get(key) not in (None, ""):
                 data[key] = values[key]
         tmp = path + ".tmp"
@@ -321,6 +355,8 @@ class UltraMemoryProvider(MemoryProvider):
         self._auto_capture = _as_bool(cfg.get("auto_capture"), True)
         self._feedback = _as_bool(cfg.get("feedback"), True)
         self._recall_k = _as_int(cfg.get("recall_k"), 8, 1, 100)
+        space = str(cfg.get("space") or "private").strip().lower()
+        self._space = space if space in ("private", "shared") else "private"
         self._session_id = session_id or ""
         self._platform = str(kwargs.get("platform") or "")
         # tenant is fixed by the key; scope partitions per workspace/agent within the tenant
@@ -393,7 +429,7 @@ class UltraMemoryProvider(MemoryProvider):
         )
 
     def _plain_recall_block(self, q: str) -> str:
-        data = self._post("/api/v1/recall", {"query": q[:4096], "scope": self._scope, "k": self._recall_k})
+        data = self._post("/api/v1/recall", {"query": q[:4096], "scope": self._scope, "space": "both", "k": self._recall_k})
         lines = _fact_lines((data or {}).get("results") or [], self._recall_k)
         return "Remembered (UltraMemory):\n" + "\n".join(lines) if lines else ""
 
@@ -403,7 +439,7 @@ class UltraMemoryProvider(MemoryProvider):
             return ""
         if self._gated:
             status, data = self._post_raw(
-                "/api/v1/recall/gated", {"query": q[:4096], "scope": self._scope, "k": self._recall_k}
+                "/api/v1/recall/gated", {"query": q[:4096], "scope": self._scope, "space": "both", "k": self._recall_k}
             )
             if status == 402:
                 # recall_gated is a paid feature. On the free plan, fall back to plain recall so
@@ -445,7 +481,7 @@ class UltraMemoryProvider(MemoryProvider):
         if not q:
             return ""
         data = self._post(
-            "/api/v1/recall", {"query": q[:4096], "scope": self._scope, "k": min(self._recall_k, 6)}
+            "/api/v1/recall", {"query": q[:4096], "scope": self._scope, "space": "both", "k": min(self._recall_k, 6)}
         )
         lines = _fact_lines((data or {}).get("results") or [], 6)
         return "Durable facts from UltraMemory (preserve):\n" + "\n".join(lines) if lines else ""
@@ -498,6 +534,7 @@ class UltraMemoryProvider(MemoryProvider):
                 "value": value,
                 "source": f"hermes:{self._platform or 'cli'}",
                 "scope": self._scope,
+                "space": self._space,
             },
         )
         if status == 429:
@@ -538,6 +575,7 @@ class UltraMemoryProvider(MemoryProvider):
                 "value": c[:8192],
                 "source": f"hermes:builtin:{action}",
                 "scope": self._scope,
+                "space": self._space,
             },
         )
 
@@ -561,6 +599,7 @@ class UltraMemoryProvider(MemoryProvider):
                 "value": digest,
                 "source": f"hermes:{self._platform or 'cli'}:session_end",
                 "scope": self._scope,
+                "space": self._space,
             },
         )
 
@@ -577,6 +616,9 @@ class UltraMemoryProvider(MemoryProvider):
                 value = str(args.get("value") or "").strip()
                 if not (entity and key and value):
                     return tool_error("memory_write requires entity, key, and value")
+                w_space = str(args.get("space") or "").strip().lower()
+                if w_space not in ("private", "shared"):
+                    w_space = self._space
                 data = self._post(
                     "/api/v1/permanent",
                     {
@@ -587,6 +629,7 @@ class UltraMemoryProvider(MemoryProvider):
                         if args.get("rationale")
                         else None,
                         "scope": self._scope,
+                        "space": w_space,
                         "source": "hermes:tool",
                     },
                 )
@@ -601,8 +644,11 @@ class UltraMemoryProvider(MemoryProvider):
                 if not query:
                     return tool_error(f"{tool_name} requires a query")
                 k = _as_int(args.get("k"), self._recall_k, 1, 100)
+                r_space = str(args.get("space") or "").strip().lower()
+                if r_space not in ("private", "shared", "both"):
+                    r_space = "both"
                 path = "/api/v1/recall/gated" if tool_name == "recall_gated" else "/api/v1/recall"
-                data = self._post(path, {"query": query[:4096], "scope": self._scope, "k": k})
+                data = self._post(path, {"query": query[:4096], "scope": self._scope, "space": r_space, "k": k})
                 if data is None:
                     return tool_error("UltraMemory recall failed")
                 return json.dumps(data)
