@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.logiclabsai/ultramemory-mcp",
+  "name": "io.github.LogicLabsAI/ultramemory-mcp",
   "title": "UltraMemory",
   "description": "Cross-tool memory for your AI that recalls first every turn and admits when it doesn't know.",
   "version": "1.0.0",
