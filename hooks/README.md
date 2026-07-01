@@ -22,6 +22,8 @@ nothing and exits `0`, so it can never block or slow your prompt beyond a short 
    export ULTRAMEMORY_API_KEY=um_YOUR_KEY
    # optional, defaults to https://api.ultramemory.us
    # export ULTRAMEMORY_API_BASE=https://api.ultramemory.us
+   # optional: recall ONLY this project's memory scope (see "Per-project memory" below)
+   # export ULTRAMEMORY_SCOPE=my-project
    ```
 3. Register the hook in `.claude/settings.json`:
    ```json
@@ -54,10 +56,24 @@ Put the script at `~/.claude/hooks/recall-first-hook.sh` and add the same `hooks
 ```
 Export `ULTRAMEMORY_API_KEY` in your shell profile so it's present for every session.
 
+## Per-project memory (optional)
+
+By default the hook recalls from your account's default memory pool — the same across every
+project. To keep projects separate, set `ULTRAMEMORY_SCOPE` **per project** in that project's
+`.claude/settings.json`:
+
+```json
+{ "env": { "ULTRAMEMORY_SCOPE": "my-project" } }
+```
+
+With a scope set, the hook recalls **only** memories written under that scope (e.g. by MCP tools
+told to use `scope="my-project"`, or a Hermes agent whose workspace resolves to it) — project A's
+memories never surface in project B. Leave it unset for one shared memory across all projects.
+
 ## How it works
 - Reads the `UserPromptSubmit` event JSON from stdin and extracts your `prompt`.
-- `POST $ULTRAMEMORY_API_BASE/api/v1/recall` with `{"query": <prompt>, "k": 5}` and
-  `Authorization: Bearer $ULTRAMEMORY_API_KEY`.
+- `POST $ULTRAMEMORY_API_BASE/api/v1/recall` with `{"query": <prompt>, "k": 5}` (plus
+  `"scope"` when `ULTRAMEMORY_SCOPE` is set) and `Authorization: Bearer $ULTRAMEMORY_API_KEY`.
 - Emits `{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": …}}`
   with the recalled facts — the supported way to add context for this event.
 - The key is read from the environment and is **never** logged or written to disk.

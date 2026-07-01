@@ -6,6 +6,7 @@ set -uo pipefail
 
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 API_KEY="${ULTRAMEMORY_API_KEY:-}"
+SCOPE="${ULTRAMEMORY_SCOPE:-}"   # optional: recall only this project's scope (opt-in; empty = account default)
 
 payload="$(cat)"                               # the UserPromptSubmit JSON on stdin
 command -v curl    >/dev/null 2>&1 || exit 0   # fail-open if prerequisites are missing
@@ -17,7 +18,12 @@ try: print(json.load(sys.stdin).get("prompt",""))
 except Exception: pass')"
 [ -n "$prompt" ] || exit 0
 
-body="$(printf '%s' "$prompt" | python3 -c 'import json,sys; print(json.dumps({"query": sys.stdin.read(), "k": 5}))')"
+body="$(printf '%s' "$prompt" | UM_SCOPE="$SCOPE" python3 -c 'import json,os,sys
+req = {"query": sys.stdin.read(), "k": 5}
+scope = os.environ.get("UM_SCOPE", "").strip()
+if scope:
+    req["scope"] = scope
+print(json.dumps(req))')"
 
 resp="$(printf '%s' "$body" | curl -s --max-time 6 -X POST "$API_BASE/api/v1/recall" \
   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" --data @-)" || exit 0

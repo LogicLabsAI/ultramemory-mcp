@@ -22,6 +22,13 @@ claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
 
 Get a free key at **https://ultramemory.us** — no credit card required.
 
+### Or connect with OAuth — no key needed
+
+On **claude.ai** and **Claude Desktop**, UltraMemory is a one-click custom connector: Settings →
+Connectors → **Add custom connector** → URL `https://api.ultramemory.us/mcp` → sign in when
+prompted. The server speaks **OAuth 2.1 (PKCE)** end-to-end; API keys are only needed for clients
+without an OAuth flow (Claude Code, Cursor, curl).
+
 ## Tools
 
 The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes six tools:
@@ -90,8 +97,17 @@ choose to call a tool. Install with `pip install ultramemory-hermes` then `ultra
 
 ## Memory spaces (Teams)
 
-On Teams accounts each member has a **private** member space and the team shares a **shared** space.
-Pick where auto-captured memory lands with `ULTRAMEMORY_SPACE`:
+On **Teams, Business, and Enterprise** accounts, memory is two-layer:
+
+- **Shared team layer** — org-wide knowledge (policies, project context, decisions) curated by the
+  **owner/admin**: only they can write it, via the dashboard's "Team knowledge" console or the API.
+  Everything in it is instantly part of every member's recall.
+- **Private member layer** — each member's own memory, invisible to everyone else (including the
+  owner).
+
+Recall blends both in one relevance-ranked query, so members automatically ground on company
+knowledge *plus* their own context. In the Hermes provider, pick where auto-captured memory lands
+with `ULTRAMEMORY_SPACE`:
 
 ```bash
 export ULTRAMEMORY_SPACE=private   # private = your own member space (default)
@@ -111,6 +127,21 @@ The explicit tools also take an optional per-call `space` arg that overrides the
 **Precedence:** if your Hermes `agent_workspace` resolves to an explicit workspace **scope**, that
 scope wins and `space` is ignored (a server-side rule). `space` only takes effect for the default
 (non-workspace) scope.
+
+## Per-project memory (scopes)
+
+Within one account, the optional **`scope`** parameter partitions memory per project or workspace —
+an explicit scope is written to and recalled from **exclusively**, so project A's memories never
+bleed into project B:
+
+- **Hermes** — automatic: each agent workspace gets its own scope; nothing to configure.
+- **MCP clients (claude.ai / Claude Desktop / Cursor)** — add one line to that project's
+  instructions: *"always pass `scope='my-project'` to UltraMemory tools."*
+- **Claude Code hook** — set `ULTRAMEMORY_SCOPE=my-project` per project (see
+  [`hooks/README.md`](hooks/README.md)).
+
+Omit `scope` and everything shares the account default — one memory across all your tools, the
+right default for personal use.
 
 ## Claude Code recall hook
 
