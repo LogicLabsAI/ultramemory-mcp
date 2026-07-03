@@ -47,6 +47,43 @@ nothing and exits `0`, so it can never block or slow your prompt beyond a short 
 
 That's it. Submit a prompt and the hook recalls relevant memories into context automatically.
 
+## Capture hook — automatic memory writing on every turn
+
+The recall hook reads; the **capture hook** writes. Registered on the `Stop` event, it runs when
+each turn finishes, extracts the last user and assistant messages from the transcript, and posts
+them to UltraMemory — which distills the **durable facts** (your projects, preferences, decisions)
+into your private memory. Repeated facts are **deduped server-side**, and it is **fail-open**: any
+problem (no key, no network, no `curl`/`python3`, nothing durable) writes nothing and exits `0`, so
+it never blocks or slows your turn.
+
+It reuses the same environment variables as the recall hook — `ULTRAMEMORY_API_KEY` (required) and
+`ULTRAMEMORY_API_BASE` (optional, defaults to `https://api.ultramemory.us`).
+
+1. Copy the hook into your project's Claude config and make it executable:
+   ```bash
+   cp hooks/capture-hook.sh .claude/hooks/capture-hook.sh
+   chmod +x .claude/hooks/capture-hook.sh
+   ```
+2. Register the hook in `.claude/settings.json` (alongside the `UserPromptSubmit` block above):
+   ```json
+   {
+     "hooks": {
+       "Stop": [
+         {
+           "matcher": "",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/capture-hook.sh",
+               "timeout": 10
+             }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
 ## Make it global (every project, every session)
 
 Put the script at `~/.claude/hooks/recall-first-hook.sh` and add the same `hooks` block to your
