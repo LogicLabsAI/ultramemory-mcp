@@ -1,5 +1,5 @@
 name: ultramemory
 version: 1.0.0
-description: "UltraMemory — self-learning, metamemory-gated long-term memory. Auto-injects grounded recall before each turn (abstains instead of guessing), captures turns, mirrors the built-in memory tool, preserves facts across compression, and consolidates server-side. One API key = your own private tenant."
+description: "UltraMemory — self-learning, metamemory-gated long-term memory. Auto-injects grounded recall before each turn (abstains instead of guessing), captures durable facts (rich cards + atoms), mirrors the built-in memory tool, preserves facts across compression, and consolidates server-side. One API key = your own private tenant."
 pip_dependencies:
   - httpx

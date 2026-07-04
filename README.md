@@ -92,8 +92,10 @@ curl -s -X POST https://api.ultramemory.us/api/v1/recall \
 The `ultramemory-hermes` package (this repo) is a full Hermes Agent memory provider — not just a
 connector. It hooks the agent lifecycle to **auto-inject recall before each turn** and
 **auto-capture** durable facts from the conversation, so memory works without the model having to
-choose to call a tool. Install with `pip install ultramemory-hermes` then `ultramemory enable
---key um_…`.
+choose to call a tool. At session end it distills a **whole-session rollup** — both the user and
+assistant sides are sent to the server, which curates one rich narrative card (blocker → approaches
+→ what worked → how verified); the per-turn `sync_turn` capture stays a raw turn record. Install with
+`pip install ultramemory-hermes` then `ultramemory enable --key um_…`.
 
 ## Memory spaces (Teams)
 
@@ -143,12 +145,19 @@ bleed into project B:
 Omit `scope` and everything shares the account default — one memory across all your tools, the
 right default for personal use.
 
-## Claude Code recall hook
+## Claude Code hooks (recall + capture)
 
-Want deterministic recall in Claude Code without Hermes? Use the
-[`UserPromptSubmit` recall hook](hooks/) — it runs on every prompt you submit, recalls your top
-matches, and injects them into context **before the model answers**. Fail-open and copy-paste
-runnable. See [`hooks/README.md`](hooks/README.md).
+Want deterministic memory in Claude Code without Hermes? Two copy-paste, fail-open hooks:
+
+- **Recall hook** ([`UserPromptSubmit`](hooks/)) — runs on every prompt you submit, recalls your top
+  matches, and injects them into context **before the model answers**.
+- **Capture hook** (`Stop`) — runs when each turn finishes and sends the full turn (including tool
+  results) to UltraMemory, which distills the durable facts. Every Nth turn
+  (`ULTRAMEMORY_SNAPSHOT_EVERY`, default 5) it also nudges the model to author a wayback-grade
+  **session snapshot** via the bundled [`ultramemory-snapshot` Skill](skills/ultramemory-snapshot/)
+  (Claude Code ≥ 2.1.163).
+
+Both are fail-open and copy-paste runnable. See [`hooks/README.md`](hooks/README.md).
 
 ## Why UltraMemory
 

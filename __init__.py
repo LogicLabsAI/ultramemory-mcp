@@ -33,6 +33,7 @@ import logging
 import os
 import re
 import threading
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -127,7 +128,11 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
     {
         "name": "memory_write",
         "description": "Save a durable, provenanced fact to long-term memory (deduped, bitemporal). "
-        "Use for decisions, preferences, and facts worth remembering across sessions.",
+        "Use for decisions, preferences, and facts worth remembering across sessions. "
+        "Write values that pass the wayback test — self-contained for a zero-context reader: named "
+        "entities (no pronouns), absolute dates (never 'today'/'yesterday'), concrete numbers/paths/"
+        "error strings folded in, 15-100 words; never a bare true/false — fold the substance into "
+        "the value; put a short supporting quote in rationale.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -425,7 +430,9 @@ class UltraMemoryProvider(MemoryProvider):
             "You have UltraMemory, a long-term self-learning memory. Relevant remembered facts are "
             "injected before your turn under 'Remembered (UltraMemory)'. Rely on grounded facts; when "
             "the memory is unsure or has nothing, retrieve or ask rather than guessing. Use the "
-            "memory_write tool to save durable facts and decisions worth keeping across sessions."
+            "memory_write tool to save durable facts and decisions worth keeping across sessions. "
+            "When saving with memory_write, write values that stand alone months later: named "
+            "entities, absolute dates, concrete numbers and paths."
         )
 
     def _plain_recall_block(self, q: str) -> str:
@@ -580,23 +587,27 @@ class UltraMemoryProvider(MemoryProvider):
         )
 
     def on_session_end(self, messages: List[Dict[str, Any]]) -> None:
-        # persist a recall-able digest of the session; server-side worker consolidates nightly
+        # distill the WHOLE session into a rich rollup card server-side (the narrative — blocker,
+        # approaches, what worked, how verified — lives in no single turn). Both roles are sent so
+        # the extractor can read the assistant's work, not just the user's prompts.
         if not self._auto_capture or not messages:
             return
-        users = [
-            m.get("content", "")
+        lines = [
+            f"{m.get('role')}: {m.get('content')}"
             for m in messages
-            if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)
+            if isinstance(m, dict)
+            and m.get("role")
+            and isinstance(m.get("content"), str)
+            and m.get("content").strip()
         ]
-        digest = " | ".join(u.strip() for u in users if u.strip())[:8192]
-        if not digest:
+        session_text = "\n".join(lines)[:64000]
+        if not session_text:
             return
         self._post(
-            "/api/v1/permanent",
+            "/api/v1/rollup",
             {
-                "entity": f"session:{self._scope}",
-                "key": f"session-digest:{self._session_id or 's'}"[:512],
-                "value": digest,
+                "session_text": session_text,
+                "observed_at": datetime.now(timezone.utc).isoformat(),
                 "source": f"hermes:{self._platform or 'cli'}:session_end",
                 "scope": self._scope,
                 "space": self._space,

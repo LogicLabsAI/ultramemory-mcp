@@ -89,6 +89,8 @@ class _Recorder:
                                              "count": 1})
         if path == "/api/v1/permanent":
             return httpx.Response(200, json={"fact_id": "f1", "deduped": False, "superseded": 0})
+        if path == "/api/v1/rollup":
+            return httpx.Response(200, json={"written": 1, "deduped": 0, "skipped": 0})
         if path == "/api/v1/playbook/recall":
             return httpx.Response(200, json={"results": [], "count": 0})
         if path == "/api/v1/feedback":
@@ -193,8 +195,14 @@ def test_on_session_end_digest(monkeypatch):
     p = _make(monkeypatch, rec)
     p.on_session_end([{"role": "user", "content": "first"}, {"role": "assistant", "content": "ok"},
                       {"role": "user", "content": "second"}])
-    assert rec.calls[-1][0] == "/api/v1/permanent"
-    assert "first" in rec.calls[-1][1]["value"] and "second" in rec.calls[-1][1]["value"]
+    # session_end now posts a whole-session rollup (both roles), not a user-only permanent digest
+    assert rec.calls[-1][0] == "/api/v1/rollup"
+    body = rec.calls[-1][1]
+    assert "first" in body["session_text"] and "second" in body["session_text"]
+    assert "ok" in body["session_text"]  # assistant content is now included (both roles)
+    assert body["source"].endswith(":session_end")
+    assert body["scope"] == p._scope
+    assert "observed_at" in body
 
 
 def test_auto_capture_off(monkeypatch):
