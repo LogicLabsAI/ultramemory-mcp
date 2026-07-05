@@ -25,26 +25,22 @@ if scope:
     req["scope"] = scope
 print(json.dumps(req))')"
 
-resp="$(printf '%s' "$body" | curl -s --max-time 6 -X POST "$API_BASE/api/v1/recall" \
+resp="$(printf '%s' "$body" | curl -s --max-time 8 -X POST "$API_BASE/api/v1/recall/gated" \
   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" --data @-)" || exit 0
 
 printf '%s' "$resp" | python3 -c '
 import json, sys
 try:
-    results = (json.load(sys.stdin).get("results") or [])
+    data = json.load(sys.stdin)
 except Exception:
     sys.exit(0)
-if not results:
+# Metamemory gate: when memory is unsure/empty it abstains — stay quiet, inject nothing.
+if data.get("decision") == "abstain":
     sys.exit(0)
-lines = ["[UltraMemory] Relevant saved memories — ground your answer in these:"]
-for r in results:
-    val = (r.get("value") or "").strip()
-    if not val:
-        continue
-    label = " ".join(x for x in ((r.get("entity") or "").strip(), (r.get("key") or "").strip()) if x)
-    lines.append(f"- {label}: {val}" if label else f"- {val}")
-if len(lines) == 1:
+# The gated response ships a ready-to-use sectioned briefing (tier T1) in context_block.
+block = (data.get("context_block") or "").strip()
+if not block:
     sys.exit(0)
-print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "\n".join(lines)}}))
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": block}}))
 '
 exit 0

@@ -147,11 +147,34 @@ memories never surface in project B. Leave it unset for one shared memory across
 
 ## How it works
 - Reads the `UserPromptSubmit` event JSON from stdin and extracts your `prompt`.
-- `POST $ULTRAMEMORY_API_BASE/api/v1/recall` with `{"query": <prompt>, "k": 5}` (plus
-  `"scope"` when `ULTRAMEMORY_SCOPE` is set) and `Authorization: Bearer $ULTRAMEMORY_API_KEY`.
-- Emits `{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": …}}`
-  with the recalled facts — the supported way to add context for this event.
+- `POST $ULTRAMEMORY_API_BASE/api/v1/recall/gated` with `{"query": <prompt>, "k": 5}` (plus
+  `"scope"` when `ULTRAMEMORY_SCOPE` is set) and `Authorization: Bearer $ULTRAMEMORY_API_KEY` —
+  the **metamemory-gated** endpoint, which returns a decision plus a ready-to-use sectioned
+  briefing in `context_block` (tier **T1**, see below).
+- When the gate **abstains** (memory has nothing grounded), the hook injects nothing and exits
+  `0` — quiet by design, no noise.
+- Otherwise emits `{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": …}}`
+  with the returned `context_block` (the sectioned briefing) — the supported way to add context
+  for this event.
 - The key is read from the environment and is **never** logged or written to disk.
+
+## Latency tiers
+
+UltraMemory recall comes in three latency tiers so you trade speed for depth deliberately:
+
+- **T1 — sectioned assembly briefing (<200ms).** The default for this hook and the MCP
+  `recall_gated` tool: metamemory-gated recall returns a ready-to-use, sectioned `context_block`
+  (facts + usage notes + card bodies) assembled server-side with **no extra LLM hop** — fast
+  enough to run on **every** prompt. It abstains (injects nothing) when memory has nothing
+  grounded.
+- **T2 — ask / Haiku digest (~1–2s).** The `/me/memory/ask` path reranks the candidate pool and
+  streams a synthesized natural-language answer from a small model (Haiku). Use it when you want a
+  written answer over your memory, not just the raw briefing.
+- **T3 — agentic multi-hop (deferred).** Iterative, tool-using deep recall for hard multi-step
+  questions. Deferred pending a pricing decision; not yet available.
+
+This hook uses **T1** — the right default for recall-first injection: it stays well under the
+prompt-submit budget while still returning the whole grounded briefing.
 
 ## Notes
 - `UserPromptSubmit` always fires on every submission (the `matcher` field is ignored for this

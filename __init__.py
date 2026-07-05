@@ -168,8 +168,11 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "recall_gated",
-        "description": "Metamemory-gated recall: returns a decision (answer | verify | abstain) plus a "
-        "grounded context block. Use when you must not guess — it tells you when memory is unsure.",
+        "description": "Metamemory-gated recall (tier T1, <200ms): returns a decision (answer | verify | "
+        "abstain) plus a ready-to-use sectioned briefing in `context_block` (assembled facts + usage "
+        "notes + card bodies) — PREFER that block directly instead of re-reading the raw results. Use "
+        "when you must not guess — it tells you when memory is unsure. For a synthesized natural-language "
+        "answer (tier T2, ~1-2s), use the ask/digest path instead.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -464,8 +467,10 @@ class UltraMemoryProvider(MemoryProvider):
             facts = data.get("results") or []
             if decision == "abstain" or not facts:
                 return ""  # honest: nothing grounded — don't inject noise
-            lines = _fact_lines(facts, self._recall_k)
-            if not lines:
+            # The gated response now assembles a ready-to-use sectioned briefing (S7.1) — inject
+            # it directly instead of re-assembling our own fact lines.
+            context_block = (data.get("context_block") or "").strip()
+            if not context_block:
                 return ""
             eid = data.get("event_id")
             texts = [f"{f.get('entity')} {f.get('key')} {f.get('value')}" for f in facts if isinstance(f, dict)]
@@ -477,7 +482,7 @@ class UltraMemoryProvider(MemoryProvider):
             if isinstance(conf, (int, float)):
                 head += f", confidence {conf:.2f}"
             head += "):"
-            block = head + "\n" + "\n".join(lines)
+            block = head + "\n" + context_block
             if decision == "verify":
                 block += "\n(verify these before relying on them)"
             return block
