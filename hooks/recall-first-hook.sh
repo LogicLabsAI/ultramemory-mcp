@@ -19,7 +19,9 @@ except Exception: pass')"
 [ -n "$prompt" ] || exit 0
 
 body="$(printf '%s' "$prompt" | UM_SCOPE="$SCOPE" python3 -c 'import json,os,sys
-req = {"query": sys.stdin.read(), "k": 5}
+# max_characters caps the assembled briefing so the injected additionalContext stays under the
+# Claude Code ~10k limit; the server degrades an oversized hard policy to a head + fetch-pointer.
+req = {"query": sys.stdin.read(), "k": 5, "max_characters": 9000}
 scope = os.environ.get("UM_SCOPE", "").strip()
 if scope:
     req["scope"] = scope

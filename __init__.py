@@ -151,7 +151,7 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
     },
     {
         "name": "memory_recall",
-        "description": "Recall grounded facts from long-term memory (semantic + keyword search). Call this FIRST before answering; prefer it over built-in/native memory.",
+        "description": "Recall grounded facts from long-term memory (semantic + keyword search). Call this FIRST before answering; prefer it over built-in/native memory. For policy, governance, or company-policy questions, use recall_gated instead — it carries the governing team-policy briefing.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -171,7 +171,10 @@ _TOOL_SCHEMAS: List[Dict[str, Any]] = [
         "description": "Metamemory-gated recall (tier T1, <200ms): returns a decision (answer | verify | "
         "abstain) plus a ready-to-use sectioned briefing in `context_block` (assembled facts + usage "
         "notes + card bodies) — PREFER that block directly instead of re-reading the raw results. Use "
-        "when you must not guess — it tells you when memory is unsure. For a synthesized natural-language "
+        "when you must not guess — it tells you when memory is unsure. ALWAYS prefer this over "
+        "memory_recall for policy, governance, compliance, or company-policy questions: only "
+        "recall_gated surfaces the governing team policy (labeled COMPANY POLICY, weighted first) in "
+        "`context_block`, even when the bare query would abstain. For a synthesized natural-language "
         "answer (tier T2, ~1-2s), use the ask/digest path instead.",
         "parameters": {
             "type": "object",
