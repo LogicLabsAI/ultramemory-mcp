@@ -40,6 +40,24 @@ import httpx
 
 logger = logging.getLogger("ultramemory.provider")
 
+# --- client-side cache (token economics, C3): memoizes gated recall responses (5 min TTL) and
+# tracks per-session seen fact_ids so follow-up prefetches can send exclude_ids. Fail-open: if
+# cache.py can't be loaded, `_cache` is None and prefetch behaves exactly as without a cache. ---
+try:
+    from . import cache as _cache  # installed package: ultramemory.cache
+except Exception:  # pragma: no cover - flat checkout / by-path import (test_provider.py)
+    try:
+        import importlib.util as _ilu
+
+        _cache_spec = _ilu.spec_from_file_location(
+            "ultramemory_client_cache",
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache.py"),
+        )
+        _cache = _ilu.module_from_spec(_cache_spec)
+        _cache_spec.loader.exec_module(_cache)
+    except Exception:
+        _cache = None
+
 # --- decouple from the host so the plugin imports & unit-tests without Hermes installed ---
 try:  # real ABC at runtime inside Hermes
     from agent.memory_provider import MemoryProvider
@@ -430,6 +448,9 @@ class UltraMemoryProvider(MemoryProvider):
 
     # ---- context injection ----
     def system_prompt_block(self) -> str:
+        # BYTE-STABLE CONTRACT (token economics, C3): this block must be byte-identical across
+        # repeated calls — no timestamps, counters, or ordering drift — so Hermes core can treat
+        # the system prompt as cache-friendly (prompt caching). Keep it a constant literal.
         if not self._api_key:
             return ""
         return (
@@ -451,21 +472,35 @@ class UltraMemoryProvider(MemoryProvider):
         if not q:
             return ""
         if self._gated:
-            status, data = self._post_raw(
-                "/api/v1/recall/gated", {"query": q[:4096], "scope": self._scope, "space": "both", "k": self._recall_k}
-            )
-            if status == 402:
-                # recall_gated is a paid feature. On the free plan, fall back to plain recall so
-                # memory STILL injects (just without the confidence gate) instead of silently
-                # injecting nothing — and surface the gap once so it isn't invisible.
-                self._notify_once(
-                    "gated_paywall",
-                    "UltraMemory: confidence-gated recall requires a paid plan; falling back to "
-                    "basic recall. Upgrade for gated (abstain-aware) recall.",
-                )
-                return self._plain_recall_block(q)
-            if not data:
-                return ""
+            # Token economics (C3): preview tier + memoization + per-session dedupe by default.
+            # ULTRAMEMORY_PREVIEW=off reverts to today's full behavior — no cache consults and
+            # the exact previous request shape (no mode / exclude_ids keys).
+            preview = os.environ.get("ULTRAMEMORY_PREVIEW", "").strip().lower() != "off"
+            sid = session_id or self._session_id or "s"  # same session key as _pending_feedback
+            data = _cache.memo_get(q[:4096], self._scope, "both") if (preview and _cache) else None
+            # a memo hit renders from cache — an identical prefetch within 5 min makes no HTTP call
+            if not isinstance(data, dict):
+                body = {"query": q[:4096], "scope": self._scope, "space": "both", "k": self._recall_k}
+                if preview:
+                    body["mode"] = "preview"
+                    seen = _cache.seen_get(sid) if _cache else set()
+                    if seen:
+                        body["exclude_ids"] = sorted(seen)  # dedupe facts this session already holds
+                status, data = self._post_raw("/api/v1/recall/gated", body)
+                if status == 402:
+                    # recall_gated is a paid feature. On the free plan, fall back to plain recall so
+                    # memory STILL injects (just without the confidence gate) instead of silently
+                    # injecting nothing — and surface the gap once so it isn't invisible.
+                    self._notify_once(
+                        "gated_paywall",
+                        "UltraMemory: confidence-gated recall requires a paid plan; falling back to "
+                        "basic recall. Upgrade for gated (abstain-aware) recall.",
+                    )
+                    return self._plain_recall_block(q)
+                if not data:
+                    return ""
+                if preview and _cache and status < 400 and isinstance(data, dict):
+                    _cache.memo_put(q[:4096], self._scope, "both", response=data)
             decision = data.get("decision")
             facts = data.get("results") or []
             if decision == "abstain" or not facts:
@@ -480,6 +515,9 @@ class UltraMemoryProvider(MemoryProvider):
             if eid and self._feedback:
                 with self._lock:
                     self._pending_feedback[session_id or self._session_id or "s"] = {"event_id": str(eid), "texts": texts}
+            if preview and _cache:
+                # remember what this session was shown -> the next prefetch sends exclude_ids
+                _cache.seen_add(sid, [f.get("fact_id") for f in facts if isinstance(f, dict) and f.get("fact_id")])
             conf = data.get("confidence")
             head = "Remembered (UltraMemory"
             if isinstance(conf, (int, float)):

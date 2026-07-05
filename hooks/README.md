@@ -6,8 +6,12 @@ forgets. This hook removes the guesswork: it runs on **every** prompt you submit
 the context **before the model answers**. Recall-first, guaranteed — because the harness runs it,
 not the model.
 
-It is **fail-open**: any problem (no key, no network, no `curl`/`python3`, empty results) injects
+It is **fail-open**: any problem (no key, no network, no `python3`, empty results) injects
 nothing and exits `0`, so it can never block or slow your prompt beyond a short timeout.
+
+It is also **token-economical**: it requests the compact **preview** briefing tier, memoizes
+responses for 5 minutes, dedupes facts already injected this session, and hard-caps every
+injection at 9,500 characters — see [Token economics](#token-economics-preview-tier-memoization-dedupe).
 
 ## Install (project-scoped — recommended to start)
 
@@ -16,6 +20,10 @@ nothing and exits `0`, so it can never block or slow your prompt beyond a short 
    mkdir -p .claude/hooks
    cp hooks/recall-first-hook.sh .claude/hooks/recall-first-hook.sh
    chmod +x .claude/hooks/recall-first-hook.sh
+   # optional but recommended: enables 5-min memoization + per-session dedupe
+   # (also satisfied by `pip install ultramemory-hermes`; without either, the hook
+   # still works — it just skips the cache)
+   cp cache.py .claude/hooks/cache.py
    ```
 2. Export your UltraMemory key (get one free at https://ultramemory.us — no credit card required):
    ```bash
@@ -46,6 +54,39 @@ nothing and exits `0`, so it can never block or slow your prompt beyond a short 
    ```
 
 That's it. Submit a prompt and the hook recalls relevant memories into context automatically.
+
+## Token economics — preview tier, memoization, dedupe
+
+The hook is built to keep recall cheap (~150–400 tokens/turn instead of ~2.8K) without losing the
+anti-confabulation guarantees:
+
+- **Preview tier.** Requests are sent with `mode: "preview"`: the server renders non-policy facts
+  as one-line summaries (`fact_id · entity · key: head… (fetch for full)`) under a tight character
+  budget. **Whole `[COMPANY POLICY]` cards are exempt** — they always render in full, exactly as in
+  full mode.
+- **Memoization.** Responses are memoized in `~/.ultramemory/cache.json` (created `0700`/`0600`)
+  for **5 minutes** — an identical query within that window renders from cache and makes **zero
+  HTTP calls**. The cache module (`cache.py`) ships in the `ultramemory-hermes` package; for a
+  copied hook, copy `cache.py` next to it (see Install). Without it the hook runs uncached.
+- **Per-session dedupe.** The hook keys a 24-hour "seen" set on the hook event's `session_id` and
+  sends the fact_ids it already injected as `exclude_ids`, so later turns spend their budget on
+  *new* facts instead of repeating old ones.
+- **Client confidence threshold.** Abstain responses inject nothing (as before). Additionally,
+  `ULTRAMEMORY_MIN_CONFIDENCE` skips injections whose gate band is below it. The decision encodes
+  the band (`answer` = high, `verify` = medium, `abstain` = low).
+- **Policy override.** A briefing containing `[COMPANY POLICY]` is **always injected whole**,
+  regardless of decision or threshold — company policy must reach the model even when the gate
+  abstains.
+- **Hard cap.** The injected context is always truncated at **9,500 characters** (Claude Code's
+  `additionalContext` limit is 10,000).
+
+### Environment variables
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ULTRAMEMORY_HOOK_BUDGET` | `2000` | `max_characters` budget for the preview briefing |
+| `ULTRAMEMORY_MIN_CONFIDENCE` | `low` | `low` \| `medium` \| `high` — minimum gate band to inject; `low` (default) injects medium/high (verify/answer), `high` injects only answer-grade recalls. `[COMPANY POLICY]` briefings bypass this |
+| `ULTRAMEMORY_CACHE` | *(unset)* | set to `off` to disable memoization + dedupe entirely (every call hits the API, no cache file is touched) |
 
 ## Capture hook — automatic memory writing on every turn
 
@@ -146,16 +187,20 @@ told to use `scope="my-project"`, or a Hermes agent whose workspace resolves to 
 memories never surface in project B. Leave it unset for one shared memory across all projects.
 
 ## How it works
-- Reads the `UserPromptSubmit` event JSON from stdin and extracts your `prompt`.
-- `POST $ULTRAMEMORY_API_BASE/api/v1/recall/gated` with `{"query": <prompt>, "k": 5}` (plus
-  `"scope"` when `ULTRAMEMORY_SCOPE` is set) and `Authorization: Bearer $ULTRAMEMORY_API_KEY` —
-  the **metamemory-gated** endpoint, which returns a decision plus a ready-to-use sectioned
-  briefing in `context_block` (tier **T1**, see below).
-- When the gate **abstains** (memory has nothing grounded), the hook injects nothing and exits
-  `0` — quiet by design, no noise.
+- Reads the `UserPromptSubmit` event JSON from stdin: `.prompt` becomes the query and
+  `.session_id` keys the per-session dedupe set (non-JSON stdin falls back to being the query).
+- Consults the 5-minute memo cache first — a hit renders from cache with **no HTTP call**.
+- On a miss, `POST $ULTRAMEMORY_API_BASE/api/v1/recall/gated` with
+  `{"query": <prompt>, "k": 5, "mode": "preview", "max_characters": $ULTRAMEMORY_HOOK_BUDGET,
+  "exclude_ids": [<already-seen fact_ids>]}` (plus `"scope"` when `ULTRAMEMORY_SCOPE` is set) and
+  `Authorization: Bearer $ULTRAMEMORY_API_KEY` — the **metamemory-gated** endpoint, which returns
+  a decision plus a ready-to-use sectioned briefing in `context_block` (tier **T1**, see below).
+- When the gate **abstains** (memory has nothing grounded) or the confidence band is below
+  `ULTRAMEMORY_MIN_CONFIDENCE`, the hook injects nothing and exits `0` — quiet by design, no
+  noise. Exception: a `[COMPANY POLICY]` briefing is always injected whole.
 - Otherwise emits `{"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": …}}`
-  with the returned `context_block` (the sectioned briefing) — the supported way to add context
-  for this event.
+  with the returned `context_block` (the sectioned briefing, truncated at 9,500 chars) — the
+  supported way to add context for this event.
 - The key is read from the environment and is **never** logged or written to disk.
 
 ## Latency tiers
@@ -179,4 +224,17 @@ prompt-submit budget while still returning the whole grounded briefing.
 ## Notes
 - `UserPromptSubmit` always fires on every submission (the `matcher` field is ignored for this
   event; it's kept empty for forward-compatibility).
-- Requires `curl` and `python3` (both standard on macOS/Linux). No `pip install` needed.
+- The recall hook requires only `python3` (stdlib HTTP — no `curl` needed anymore); the capture
+  hook still requires `curl`. Both are standard on macOS/Linux. No `pip install` needed.
+
+## Changelog
+
+- **1.7.0** — Token-economics upgrade. **Fix:** stdin is now parsed as the Claude Code hook JSON —
+  the query is always the extracted `.prompt` (falling back to raw stdin when stdin isn't JSON),
+  never the whole hook JSON envelope, and `.session_id` keys the new per-session dedupe set. New:
+  preview-tier requests (`mode: "preview"`, budget `ULTRAMEMORY_HOOK_BUDGET`, default 2000 chars),
+  5-minute response memoization + 24-hour per-session `exclude_ids` dedupe via `cache.py`
+  (`~/.ultramemory/cache.json`, kill-switch `ULTRAMEMORY_CACHE=off`), client confidence threshold
+  `ULTRAMEMORY_MIN_CONFIDENCE` (default `low`), a hard 9,500-char injection cap, and
+  `[COMPANY POLICY]` briefings always injected whole. Recall HTTP moved from `curl` to python
+  stdlib (`urllib`).

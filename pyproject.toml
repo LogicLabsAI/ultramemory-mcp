@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 # `ultramemory` module + `ultramemory` command the rest of the docs reference.
 [project]
 name = "ultramemory-hermes"
-version = "1.6.0"
+version = "1.7.0"
 description = "UltraMemory — self-learning, metamemory-gated long-term memory provider for Hermes Agent (and any MCP client). One API key = your own private tenant."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -45,11 +45,12 @@ ultramemory = "ultramemory:register"
 # files sit flat at the build root rather than in an `ultramemory/` subdir. Map them explicitly
 # into the package path so the wheel installs an importable `ultramemory` package.
 [tool.hatch.build.targets.wheel]
-force-include = { "__init__.py" = "ultramemory/__init__.py", "cli.py" = "ultramemory/cli.py" }
+force-include = { "__init__.py" = "ultramemory/__init__.py", "cli.py" = "ultramemory/cli.py", "cache.py" = "ultramemory/cache.py" }
 
 [tool.hatch.build.targets.sdist]
 include = [
   "/__init__.py",
+  "/cache.py",
   "/cli.py",
   "/plugin.yaml",
   "/README.md",

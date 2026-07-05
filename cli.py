@@ -12,7 +12,10 @@ What ``enable`` does (idempotent, all writes atomic, secret kept out of world-re
   2. delegates the *non-secret* options (base_url / gated / auto_capture / recall_k) to the
      provider's existing ``save_config`` so there's a single source of truth for that file;
   3. sets ``memory.provider: ultramemory`` in the Hermes config (``$HERMES_HOME/config.yaml``,
-     falling back to ``~/.hermes/config.yaml``) so the provider is actually selected.
+     falling back to ``~/.hermes/config.yaml``) so the provider is actually selected;
+  4. ejects the client-side token-economics cache skeleton at ``~/.ultramemory/cache.json``
+     (the user-editable file shared by the provider and the Claude Code recall hook) — an
+     existing cache.json is NEVER clobbered.
 
 Provider behaviour itself is untouched — this module only orchestrates the host-side wiring the
 provider can't do from inside a hook.
@@ -20,6 +23,7 @@ provider can't do from inside a hook.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -156,6 +160,33 @@ def _set_memory_provider(hermes_home: str, provider: str = "ultramemory") -> str
     return path
 
 
+def _write_cache_skeleton() -> str:
+    """Eject the user-editable client cache skeleton at ``~/.ultramemory/cache.json``.
+
+    Idempotent: an existing cache.json is NEVER clobbered (it may hold live memo/seen state).
+    Matches cache.py's on-disk contract: dir 0700, file 0600, atomic tmp+rename, document
+    ``{"version": 1, "memo": {}, "seen": {}}``. Returns the cache path either way.
+    """
+    directory = os.path.join(os.path.expanduser("~"), ".ultramemory")
+    path = os.path.join(directory, "cache.json")
+    if os.path.exists(path):
+        return path  # idempotent — never clobber live cache state
+    os.makedirs(directory, mode=0o700, exist_ok=True)
+    try:
+        os.chmod(directory, 0o700)  # makedirs mode is umask-filtered; enforce 0700
+    except OSError:
+        pass
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"version": 1, "memo": {}, "seen": {}}, separators=(",", ":")))
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, path)
+    return path
+
+
 def _cmd_enable(args: argparse.Namespace) -> int:
     key = (args.key or os.environ.get("ULTRAMEMORY_API_KEY") or "").strip()
     if not key:
@@ -190,11 +221,21 @@ def _cmd_enable(args: argparse.Namespace) -> int:
     # 3) select the provider in the Hermes config
     cfg_path = _set_memory_provider(hermes_home, provider.name)
 
+    # 4) eject the client-side token-economics cache skeleton (idempotent)
+    cache_path = _write_cache_skeleton()
+
     base = values.get("base_url") or DEFAULT_BASE_URL
     print("UltraMemory enabled.")
     print(f"  api key   -> {env_path} (ULTRAMEMORY_API_KEY, chmod 600)")
     print(f"  provider  -> {cfg_path} (memory.provider: {provider.name})")
     print(f"  base url  -> {base}")
+    print(f"  cache     -> {cache_path} (recall memo + per-session dedupe; delete to reset)")
+    print(
+        "  tunables  -> ULTRAMEMORY_CACHE=off (disable cache) | "
+        "ULTRAMEMORY_PREVIEW=off (full prefetch, no preview tier) | "
+        "ULTRAMEMORY_HOOK_BUDGET (hook recall chars, default 2000) | "
+        "ULTRAMEMORY_MIN_CONFIDENCE (hook inject floor, default low)"
+    )
     print("Restart Hermes (or start a new session) to pick up the change.")
     return 0
 

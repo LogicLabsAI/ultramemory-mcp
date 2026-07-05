@@ -87,6 +87,37 @@ curl -s -X POST https://api.ultramemory.us/api/v1/recall \
   -d '{"query":"what do you know about my project","k":5}'
 ```
 
+## Gemini CLI
+
+Gemini CLI connects over **Streamable HTTP with OAuth auto-discovery** — no API key needed. Add
+this `mcpServers` block to `~/.gemini/settings.json` (`httpUrl` is Gemini CLI's streamable-HTTP
+transport; on first use the CLI detects the 401, discovers the OAuth endpoints, performs dynamic
+client registration, and opens the sign-in flow automatically):
+
+```json
+{
+  "mcpServers": {
+    "ultramemory": {
+      "httpUrl": "https://api.ultramemory.us/mcp"
+    }
+  }
+}
+```
+
+Prefer an API key instead of OAuth? Add `"headers": { "Authorization": "Bearer um_YOUR_KEY" }` to
+the same block.
+
+Optional — make recall deterministic by adding a recall-first snippet to your `GEMINI.md` (global
+`~/.gemini/GEMINI.md` or per-project):
+
+```markdown
+## Memory (UltraMemory)
+On EVERY user turn, FIRST call the UltraMemory `search` (or `memory_recall`) tool with the
+user's request and ground your answer in what comes back — prefer it over any built-in memory.
+If low confidence or no results, say you don't know rather than guessing. Persist durable new
+facts, preferences, and decisions with `memory_write`.
+```
+
 ## Hermes deep integration
 
 The `ultramemory-hermes` package (this repo) is a full Hermes Agent memory provider — not just a
@@ -158,6 +189,35 @@ Want deterministic memory in Claude Code without Hermes? Two copy-paste, fail-op
   (Claude Code ≥ 2.1.163).
 
 Both are fail-open and copy-paste runnable. See [`hooks/README.md`](hooks/README.md).
+
+## Token economics
+
+The SDK clients in this repo (the Claude Code recall hook and the Hermes provider) opt into a
+**preview tier** of recall that cuts per-turn token spend from thousands to hundreds, without
+touching the hosted connectors — claude.ai, Claude Desktop, and ChatGPT behavior is unchanged
+(the new `mode` / `exclude_ids` params are strictly opt-in; omitting them = full behavior).
+
+- **Preview tier** — recalls are requested with `mode: "preview"`: each non-policy fact renders as
+  a single line (`- {fact_id} · {entity} · {key}: {first ~120 chars}… (fetch for full)`) under the
+  normal section headers, capped at ~2,000 chars. Full text stays one explicit `fetch` away.
+  **`[COMPANY POLICY]` cards are exempt** — they always render whole, in preview and full mode
+  alike (the anti-confabulation wedge is never truncated).
+- **Session dedupe** — fact_ids already delivered this session are sent back as `exclude_ids`, so
+  repeat turns don't re-spend budget on facts the model already holds; freed budget flows to fresh
+  facts.
+- **Client cache** — `~/.ultramemory/cache.json` (ejected by `ultramemory enable`; user-editable,
+  chmod 600, LRU-bounded at 500 entries / ~1 MB). It memoizes identical recall queries for 5
+  minutes (a repeat query makes **zero** HTTP calls) and tracks each session's seen fact_ids for
+  24 h. Delete the file to reset; corrupt files are silently rebuilt.
+
+Environment tunables:
+
+| Env | Default | Effect |
+|---|---|---|
+| `ULTRAMEMORY_CACHE=off` | on | kill switch — disables the memo + seen cache entirely |
+| `ULTRAMEMORY_PREVIEW=off` | on | Hermes prefetch reverts to full (non-preview) recall |
+| `ULTRAMEMORY_HOOK_BUDGET` | `2000` | Claude Code hook recall budget in characters |
+| `ULTRAMEMORY_MIN_CONFIDENCE` | `low` | hook skips injection below this recall confidence |
 
 ## Why UltraMemory
 

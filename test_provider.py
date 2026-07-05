@@ -13,6 +13,7 @@ import types
 from abc import ABC, abstractmethod
 
 import httpx
+import pytest
 
 
 def _have(modname: str) -> bool:
@@ -67,6 +68,20 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location("um_provider", os.path.join(_HERE, "__init__.py"))
 um = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(um)
+
+
+@pytest.fixture(autouse=True)
+def _sandbox_cache_home(monkeypatch, tmp_path):
+    """Isolate ~/.ultramemory/cache.json for EVERY test (token economics C3 regression fix).
+
+    prefetch() now consults/writes the memo + seen cache by default (ULTRAMEMORY_PREVIEW unset),
+    so without a sandboxed HOME: (a) cross-test memo hits skip HTTP — the 402-paywall fallback
+    and space=both assertions never see a request — and (b) every run reads/writes the user's
+    REAL ~/.ultramemory/cache.json. Each test gets its own throwaway HOME instead.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("ULTRAMEMORY_CACHE", raising=False)
+    monkeypatch.delenv("ULTRAMEMORY_PREVIEW", raising=False)
 
 
 class _Recorder:
@@ -387,3 +402,180 @@ def test_tool_space_overrides_and_invalid_fallback(monkeypatch):
     # invalid recall override falls back to both
     p.handle_tool_call("memory_recall", {"query": "plan?", "space": "bogus"})
     assert rec.calls[-1][1]["space"] == "both"
+
+
+# ---------------------------------------------------------------------------
+# cache.py (checklist C1) — memo roundtrip+TTL, seen-set, kill-switch, corrupt file.
+# Loaded standalone (same spec_from_file_location pattern as `um` above); every test
+# points HOME at a pytest tmp dir so ~/.ultramemory/cache.json lands in a sandbox.
+# ---------------------------------------------------------------------------
+
+_cache_spec = importlib.util.spec_from_file_location("um_cache", os.path.join(_HERE, "cache.py"))
+um_cache = importlib.util.module_from_spec(_cache_spec)
+_cache_spec.loader.exec_module(um_cache)
+
+
+def _tmp_home(monkeypatch, tmp_path):
+    """Point the cache at a throwaway HOME; return the sandboxed cache.json path."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("ULTRAMEMORY_CACHE", raising=False)
+    return os.path.join(str(tmp_path), ".ultramemory", "cache.json")
+
+
+def test_cache_memo_roundtrip_and_ttl(monkeypatch, tmp_path):
+    cache_file = _tmp_home(monkeypatch, tmp_path)
+    resp = {"decision": "answer", "context_block": "Acme · plan = Pro",
+            "results": [{"fact_id": "f1"}]}
+    assert um_cache.memo_get("what plan?", "scope1", "both") is None  # cold miss
+    um_cache.memo_put("what plan?", "scope1", "both", response=resp)
+    assert um_cache.memo_get("what plan?", "scope1", "both") == resp  # hit
+    assert um_cache.memo_get("  WHAT   plan? ", "scope1", "both") == resp  # normalized key
+    assert um_cache.memo_get("what plan?", "other-scope", "both") is None  # scope in key
+    assert os.path.exists(cache_file)
+    # TTL: age the stored entry past MEMO_TTL_SECONDS (300 s) → same lookup misses.
+    assert um_cache.MEMO_TTL_SECONDS == 300
+    with open(cache_file) as fh:
+        doc = json.load(fh)
+    for entry in doc["memo"].values():
+        entry["ts"] -= um_cache.MEMO_TTL_SECONDS + 1
+    with open(cache_file, "w") as fh:
+        json.dump(doc, fh)
+    assert um_cache.memo_get("what plan?", "scope1", "both") is None
+
+
+def test_cache_seen_set_roundtrip(monkeypatch, tmp_path):
+    _tmp_home(monkeypatch, tmp_path)
+    assert um_cache.seen_get("sess-A") == set()  # cold miss
+    um_cache.seen_add("sess-A", ["f1", "f2"])
+    um_cache.seen_add("sess-A", ["f2", "f3"])  # union — no duplicates
+    assert um_cache.seen_get("sess-A") == {"f1", "f2", "f3"}
+    assert um_cache.seen_get("sess-B") == set()  # per-session isolation
+
+
+def test_cache_kill_switch_off_is_noop_miss(monkeypatch, tmp_path):
+    cache_file = _tmp_home(monkeypatch, tmp_path)
+    monkeypatch.setenv("ULTRAMEMORY_CACHE", "off")
+    assert um_cache.memo_put("q", "s", "b", response={"x": 1}) is None
+    assert um_cache.memo_get("q", "s", "b") is None
+    assert um_cache.seen_add("sess", ["f1"]) is None
+    assert um_cache.seen_get("sess") == set()
+    assert not os.path.exists(cache_file)  # true no-op: touches no files
+
+
+def test_cache_corrupt_file_tolerated(monkeypatch, tmp_path):
+    cache_file = _tmp_home(monkeypatch, tmp_path)
+    os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+    with open(cache_file, "w") as fh:
+        fh.write("{ this is not json !!!")
+    assert um_cache.memo_get("q", "s", "b") is None  # silent miss, no crash
+    assert um_cache.seen_get("sess") == set()        # silent miss, no crash
+    um_cache.memo_put("q", "s", "b", response={"ok": True})  # write starts fresh
+    assert um_cache.memo_get("q", "s", "b") == {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Token economics (checklist C5) — provider-level memoization, seen-set dedupe,
+# kill-switch, corrupt-cache resilience, preview request shape, prompt stability.
+# HOME is sandboxed per test by the autouse `_sandbox_cache_home` fixture, so
+# ~/.ultramemory/cache.json is always a pytest tmp dir — never the real one.
+# These fail if C1 (cache.py), C3 (__init__.py prefetch/system_prompt_block), or
+# the cache logic the C2 hook shares (memo/seen/kill-switch/corrupt) is reverted.
+# ---------------------------------------------------------------------------
+
+
+class _EconRecorder:
+    """Like _Recorder, but gated-recall results carry fact_ids (the seen-set fuel)."""
+
+    def __init__(self):
+        self.calls = []
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode() or "{}") if request.content else {}
+        self.calls.append((request.url.path, body))
+        if request.url.path == "/api/v1/recall/gated":
+            return httpx.Response(200, json={
+                "event_id": "e9", "decision": "answer", "confidence": 0.9,
+                "results": [{"fact_id": "fA", "entity": "Acme", "key": "plan", "value": "Pro"},
+                            {"fact_id": "fB", "entity": "Acme", "key": "seats", "value": "5"}],
+                "context_block": "Acme · plan = Pro\nAcme · seats = 5",
+            })
+        return httpx.Response(404, json={"error": "no route"})
+
+
+def _gated_calls(rec):
+    return [c for c in rec.calls if c[0] == "/api/v1/recall/gated"]
+
+
+def test_prefetch_memoizes_identical_query(monkeypatch):
+    """2nd identical prefetch within the 5-min TTL renders from the memo — 1 HTTP request."""
+    rec = _EconRecorder()
+    p = _make(monkeypatch, rec)
+    out1 = p.prefetch("what plan is Acme on?")
+    out2 = p.prefetch("what plan is Acme on?")
+    assert len(_gated_calls(rec)) == 1  # transport saw exactly one request
+    assert "Remembered (UltraMemory" in out1 and out1 == out2  # cache renders identically
+
+
+def test_prefetch_second_request_sends_exclude_ids(monkeypatch):
+    """Fact_ids delivered on turn 1 ride the next request as exclude_ids (session dedupe)."""
+    rec = _EconRecorder()
+    p = _make(monkeypatch, rec)
+    p.prefetch("what plan is Acme on?")          # delivers fA, fB -> seen-set
+    p.prefetch("how many seats does Acme have?")  # new query -> real HTTP, deduped
+    gated = _gated_calls(rec)
+    assert len(gated) == 2
+    assert "exclude_ids" not in gated[0][1]        # nothing seen on the first turn
+    assert gated[1][1]["exclude_ids"] == ["fA", "fB"]  # sorted seen-set on the second
+
+
+def test_cache_kill_switch_prefetch_makes_two_requests(monkeypatch):
+    """ULTRAMEMORY_CACHE=off disables memo+seen: identical prefetches both hit HTTP."""
+    monkeypatch.setenv("ULTRAMEMORY_CACHE", "off")
+    rec = _EconRecorder()
+    p = _make(monkeypatch, rec)
+    p.prefetch("what plan is Acme on?")
+    p.prefetch("what plan is Acme on?")
+    gated = _gated_calls(rec)
+    assert len(gated) == 2                                     # no memo hit
+    assert all("exclude_ids" not in b for _, b in gated)       # no seen-set either
+
+
+def test_prefetch_tolerates_corrupt_cache_file(monkeypatch, tmp_path):
+    """A corrupt ~/.ultramemory/cache.json must never break prefetch — and is rebuilt fresh."""
+    cache_file = os.path.join(str(tmp_path), ".ultramemory", "cache.json")
+    os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+    with open(cache_file, "w") as fh:
+        fh.write("{ this is not json !!!")
+    rec = _EconRecorder()
+    p = _make(monkeypatch, rec)
+    out = p.prefetch("what plan is Acme on?")  # must not raise; falls through to HTTP
+    assert "Remembered (UltraMemory" in out
+    assert len(_gated_calls(rec)) == 1
+    p.prefetch("what plan is Acme on?")        # cache was rebuilt -> memo hit, still 1 request
+    assert len(_gated_calls(rec)) == 1
+
+
+def test_prefetch_body_carries_preview_mode_and_off_restores_legacy_shape(monkeypatch):
+    """Default gated prefetch requests mode=preview; ULTRAMEMORY_PREVIEW=off sends today's
+    exact legacy body (no mode / exclude_ids keys) and skips the cache entirely."""
+    rec = _EconRecorder()
+    p = _make(monkeypatch, rec)
+    p.prefetch("what plan is Acme on?")
+    assert _gated_calls(rec)[-1][1]["mode"] == "preview"
+    monkeypatch.setenv("ULTRAMEMORY_PREVIEW", "off")
+    p.prefetch("what plan is Acme on?")  # identical query — but preview off bypasses the memo
+    gated = _gated_calls(rec)
+    assert len(gated) == 2
+    assert gated[-1][1] == {"query": "what plan is Acme on?", "scope": p._scope,
+                            "space": "both", "k": p._recall_k}
+
+
+def test_system_prompt_block_byte_stable(monkeypatch):
+    """system_prompt_block must be byte-identical across calls (prompt-cache friendly)."""
+    rec = _EconRecorder()
+    p = _make(monkeypatch, rec)
+    b1 = p.system_prompt_block()
+    assert b1  # non-empty when an API key is configured
+    assert p.system_prompt_block() == b1
+    p.prefetch("what plan is Acme on?")   # state changes must not perturb the block
+    assert p.system_prompt_block() == b1
