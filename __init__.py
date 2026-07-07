@@ -75,6 +75,13 @@ except Exception:  # pragma: no cover
 
 
 DEFAULT_BASE_URL = "https://api.ultramemory.us"
+# App-portal links for limit messaging — fallbacks when a 429/402 response carries no
+# X-Upgrade-Url / X-Billing-Url header (mirrors the backend's app_base_url default).
+DEFAULT_UPGRADE_URL = "https://app.ultramemory.us/upgrade"
+DEFAULT_BILLING_URL = "https://app.ultramemory.us/app/billing"
+# >=80% advisory limit-state header on successful data-path responses (U9): compact JSON
+# {window,label,pct,used,cap,resets_at,scope}; absent below 80% (zero extra bytes).
+_LIMIT_STATE_HEADER = "X-Limit-State"
 # scope must satisfy the API's Scope pattern: ^[A-Za-z0-9_:.\-]+$ (max 64)
 _SCOPE_DISALLOWED = re.compile(r"[^A-Za-z0-9_:.\-]")
 
@@ -113,6 +120,72 @@ def _fact_lines(facts: List[Dict[str, Any]], limit: int) -> List[str]:
         for f in (facts or [])[:limit]
         if isinstance(f, dict)
     ]
+
+
+def _render_limit_notice(header_value: str) -> Optional[str]:
+    """Render the >=80% X-Limit-State advisory as the every-turn wedge notice (U9). scope='member'
+    is the caller's own seat window (U14) -> route-to-admin wording; otherwise the upgrade link.
+    Malformed header -> None: advisory only, never break a working recall block."""
+    try:
+        state = json.loads(header_value)
+        pct, label, used, cap = state["pct"], state["label"], state["used"], state["cap"]
+        resets_at, scope = state["resets_at"], state.get("scope")
+        pct, used = min(int(pct), 100), min(int(used), int(cap))  # display clamp — never "104%" / "(26 of 25)"
+    except Exception:
+        return None
+    lead = (
+        f"You're at {pct}% of your {label} limit ({used} of {cap}). "
+        f"At 100% new memory writes pause and resume automatically at {resets_at}"
+    )
+    if scope == "member":
+        return f"{lead}. To increase your limit, contact your workspace admin."
+    return f"{lead} — or upgrade your plan: {DEFAULT_UPGRADE_URL}."
+
+
+def _limit_reached_payload(data: Optional[Dict[str, Any]], headers: Any) -> Dict[str, Any]:
+    """Structured limit_reached dict for a 429, WINDOW-ACCURATE from the response itself
+    (X-Limit-Window / X-Limit-Reset / X-Upgrade-Url headers + the friendly detail) — never an
+    assumed window. No X-Limit-Window means the per-minute rate limiter fired (window 'rpm')."""
+    detail = data.get("detail") if isinstance(data, dict) else None
+    window = headers.get("X-Limit-Window") if headers is not None else None
+    upgrade = (headers.get("X-Upgrade-Url") if headers is not None else None) or DEFAULT_UPGRADE_URL
+    if window:
+        return {
+            "status": "limit_reached",
+            "message": detail or "You've reached a usage limit on your current plan.",
+            "window": window,
+            "reset_at": headers.get("X-Limit-Reset"),
+            "upgrade_url": upgrade,
+            "memory_safe": True,
+        }
+    try:
+        retry_after = max(1, int(headers.get("Retry-After") or 60)) if headers is not None else 60
+    except (TypeError, ValueError):
+        retry_after = 60
+    return {
+        "status": "limit_reached",
+        "window": "rpm",
+        "message": (
+            f"Per-minute rate limit reached — retry in {retry_after}s. "
+            f"For higher rate limits, upgrade: {upgrade}"
+        ),
+        "retry_after_seconds": retry_after,
+        "upgrade_url": upgrade,
+        "memory_safe": True,
+    }
+
+
+def _past_due_payload(data: Optional[Dict[str, Any]], headers: Any) -> Dict[str, Any]:
+    """Structured payment_past_due dict for a 402 — a labeled BILLING state with the portal link
+    (X-Billing-Url), never a bare failure; the fix is instant and the memories are safe."""
+    detail = data.get("detail") if isinstance(data, dict) else None
+    billing = (headers.get("X-Billing-Url") if headers is not None else None) or DEFAULT_BILLING_URL
+    return {
+        "status": "payment_past_due",
+        "message": f"{detail or 'payment past due'} — update billing: {billing}",
+        "billing_url": billing,
+        "memory_safe": True,
+    }
 
 
 # implicit-usefulness signal: did the assistant's reply actually use the injected memory?
@@ -250,8 +323,11 @@ class UltraMemoryProvider(MemoryProvider):
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._notified: set[str] = set()  # once-per-process user notices (paywall / quota)
+        self._notified: set[str] = set()  # once-per-process user notices (feature paywalls)
         self._pending_feedback: dict[str, dict] = {}  # session_id -> {"event_id": str, "texts": list[str]}
+        self._pending_limit_msg: Optional[str] = None  # capture 429/402 message -> next recall block
+        self._limit_advisory: Optional[str] = None  # freshest >=80% X-Limit-State header value
+        self._turn_notice_attached: bool = False  # the limit notice rides the recall block once per turn
 
     # ---- identity / availability ----
     @property
@@ -411,25 +487,31 @@ class UltraMemoryProvider(MemoryProvider):
             pass
 
     # ---- HTTP (sync, never raises out) ----
-    def _post_raw(self, path: str, body: Dict[str, Any]) -> tuple[int, Optional[Dict[str, Any]]]:
-        """POST -> (status_code, json|None). status_code is 0 on no-client / transport error. Lets
-        callers distinguish a paywall (402) / quota (429) from an empty result, instead of the flat
-        None that _post() returns. Never raises (the hook-safety contract)."""
+    def _post_raw(self, path: str, body: Dict[str, Any]) -> tuple[int, Optional[Dict[str, Any]], Any]:
+        """POST -> (status_code, json|None, headers). status_code is 0 (with empty headers) on
+        no-client / transport error. Lets callers distinguish a paywall (402) / limit (429) from an
+        empty result and read the machine-readable limit headers (X-Limit-*, X-Billing-Url). Also
+        stashes the >=80% X-Limit-State advisory so the next recall block carries the limit notice
+        (U9). Never raises (the hook-safety contract)."""
         client = self._client
         if client is None or not self._api_key:
-            return (0, None)
+            return (0, None, httpx.Headers())
         try:
             resp = client.post(path, json=body)
             try:
                 data = resp.json()
             except Exception:
                 data = None
-            return (resp.status_code, data)
+            advisory = resp.headers.get(_LIMIT_STATE_HEADER)
+            if advisory:
+                with self._lock:
+                    self._limit_advisory = advisory
+            return (resp.status_code, data, resp.headers)
         except Exception:
-            return (0, None)
+            return (0, None, httpx.Headers())
 
     def _post(self, path: str, body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        status, data = self._post_raw(path, body)
+        status, data, _ = self._post_raw(path, body)
         if status == 0 or status >= 400:
             return None
         return data
@@ -467,10 +549,36 @@ class UltraMemoryProvider(MemoryProvider):
         lines = _fact_lines((data or {}).get("results") or [], self._recall_k)
         return "Remembered (UltraMemory):\n" + "\n".join(lines) if lines else ""
 
+    def _attach_limit_notices(self, block: str) -> str:
+        """Attach the pending capture limit message and/or the >=80% X-Limit-State limit notice to
+        the recall block, at most ONCE PER TURN (sync_turn closes the turn and resets the flag).
+        Attached even when recall itself has nothing grounded — the limit notice is not memory
+        noise (U9: every turn while any enforced limit is >=80%). Fail-open: never raises."""
+        try:
+            with self._lock:
+                if self._turn_notice_attached:
+                    return block
+                pending, advisory = self._pending_limit_msg, self._limit_advisory
+                self._pending_limit_msg = None
+                self._limit_advisory = None
+            notice = _render_limit_notice(advisory) if advisory else None
+            lines = [f"UltraMemory: {m}" for m in (pending, notice) if m]
+            if not lines:
+                return block
+            with self._lock:
+                self._turn_notice_attached = True
+            tail = "\n".join(lines)
+            return f"{block}\n{tail}" if block else tail
+        except Exception:
+            return block
+
     def prefetch(self, query: str, *, session_id: str = "") -> str:
         q = (query or "").strip()
         if not q:
             return ""
+        return self._attach_limit_notices(self._recall_block(q, session_id))
+
+    def _recall_block(self, q: str, session_id: str) -> str:
         if self._gated:
             # Token economics (C3): preview tier + memoization + per-session dedupe by default.
             # ULTRAMEMORY_PREVIEW=off reverts to today's full behavior — no cache consults and
@@ -486,7 +594,7 @@ class UltraMemoryProvider(MemoryProvider):
                     seen = _cache.seen_get(sid) if _cache else set()
                     if seen:
                         body["exclude_ids"] = sorted(seen)  # dedupe facts this session already holds
-                status, data = self._post_raw("/api/v1/recall/gated", body)
+                status, data, _ = self._post_raw("/api/v1/recall/gated", body)
                 if status == 402:
                     # recall_gated is a paid feature. On the free plan, fall back to plain recall so
                     # memory STILL injects (just without the confidence gate) instead of silently
@@ -548,7 +656,7 @@ class UltraMemoryProvider(MemoryProvider):
             return
         try:
             correct = _memory_was_used(slot.get("texts") or [], assistant_content or "")
-            status, _ = self._post_raw(
+            status, _, _ = self._post_raw(
                 "/api/v1/feedback",
                 {"event_id": slot["event_id"], "correct": bool(correct)},
             )
@@ -569,6 +677,8 @@ class UltraMemoryProvider(MemoryProvider):
         session_id: str = "",
         messages: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
+        with self._lock:
+            self._turn_notice_attached = False  # the turn completed -> the next turn may carry a notice
         self._send_feedback(session_id or self._session_id, assistant_content)
         if not self._auto_capture:
             return
@@ -579,7 +689,7 @@ class UltraMemoryProvider(MemoryProvider):
         value = f"User: {u}\nAssistant: {a}".strip()[:8192]
         sid = session_id or self._session_id
         key = "turn:" + (sid or "s") + ":" + hashlib.sha1(value.encode("utf-8")).hexdigest()[:16]
-        status, _ = self._post_raw(
+        status, data, headers = self._post_raw(
             "/api/v1/permanent",
             {
                 "entity": f"session:{self._scope}",
@@ -590,20 +700,19 @@ class UltraMemoryProvider(MemoryProvider):
                 "space": self._space,
             },
         )
-        if status == 429:
-            # Over the monthly write quota: writes are blocked but recall still works. Surface it
-            # once so the agent/operator knows memory stopped GROWING (it was being swallowed).
-            self._notify_once(
-                "write_quota",
-                "UltraMemory: monthly write quota reached — new memories are paused until your "
-                "quota resets (recall still works). Upgrade for more writes.",
-            )
-        elif status == 402:
-            self._notify_once(
-                "write_past_due",
-                "UltraMemory: memory writes are paused because the subscription is past due. "
-                "Update billing to resume saving memories.",
-            )
+        if status in (429, 402):
+            # A blocked capture is surfaced WINDOW-ACCURATELY from the structured response
+            # (X-Limit-* / X-Billing-Url headers + the friendly detail) — never an assumed window.
+            # The message is injected into the NEXT turn's recall block (in-conversation) and
+            # logged per occurrence, replacing the once-per-process logger.warning pattern.
+            # Writes pause, recall keeps working — the chat is never broken (fail-open).
+            payload = _limit_reached_payload(data, headers) if status == 429 else _past_due_payload(data, headers)
+            with self._lock:
+                self._pending_limit_msg = payload["message"]
+            try:
+                logger.warning("UltraMemory capture paused: %s", payload["message"])
+            except Exception:
+                pass
 
     def on_memory_write(
         self,
@@ -676,7 +785,7 @@ class UltraMemoryProvider(MemoryProvider):
                 w_space = str(args.get("space") or "").strip().lower()
                 if w_space not in ("private", "shared"):
                     w_space = self._space
-                data = self._post(
+                status, data, headers = self._post_raw(
                     "/api/v1/permanent",
                     {
                         "entity": entity[:512],
@@ -690,7 +799,14 @@ class UltraMemoryProvider(MemoryProvider):
                         "source": "hermes:tool",
                     },
                 )
-                if data is None:
+                if status == 429:
+                    # Relay the window-accurate limit_reached (window + reset + upgrade link from
+                    # the structured response) so the model tells the user — never a generic
+                    # failure, never an assumed window.
+                    return json.dumps(_limit_reached_payload(data, headers))
+                if status == 402:
+                    return json.dumps(_past_due_payload(data, headers))
+                if status == 0 or status >= 400 or not isinstance(data, dict):
                     return tool_error("UltraMemory write failed")
                 return json.dumps(
                     {"stored": True, "fact_id": data.get("fact_id"), "deduped": data.get("deduped")}

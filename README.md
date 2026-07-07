@@ -218,6 +218,7 @@ Environment tunables:
 | `ULTRAMEMORY_CACHE=off` | on | kill switch — disables the memo + seen cache entirely |
 | `ULTRAMEMORY_PREVIEW=off` | on | Hermes prefetch reverts to full (non-preview) recall |
 | `ULTRAMEMORY_HOOK_BUDGET` | `2000` | Claude Code hook recall budget in characters |
+| `ULTRAMEMORY_HOOK_POLICY_BUDGET` | `12000` | hook injection cap on `[COMPANY POLICY]` turns (whole policies, never truncated) |
 | `ULTRAMEMORY_MIN_CONFIDENCE` | `low` | hook skips injection below this recall confidence |
 
 ## Why UltraMemory

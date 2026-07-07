@@ -4,6 +4,8 @@
 # text block AND every tool_result from that turn — to UltraMemory, which extracts and saves the
 # durable facts (deduped server-side). Every Nth turn it also emits an in-band snapshot nudge
 # (see ULTRAMEMORY_SNAPSHOT_EVERY) so the model authors a wayback-grade session snapshot itself.
+# Limit-aware (v1.8.0): a 429 limit_reached reply is surfaced to the user via the hook's
+# systemMessage JSON field (writes are paused + when they resume) instead of being discarded.
 # Fail-open by design: any error captures nothing and exits 0, so it can never block Claude Code.
 set -uo pipefail
 
@@ -119,9 +121,27 @@ PY
 )" || exit 0
 [ -n "$body" ] || exit 0
 
-printf '%s' "$body" | curl -s --max-time 8 -X POST "$API_BASE/api/v1/capture" \
+# P3-C1(b): stop discarding the capture response — a 429 limit_reached must reach the USER
+# (writes are paused + when they resume), not /dev/null. curl -w appends the HTTP status code on
+# its own final line; any curl/parse trouble emits nothing and the hook still exits 0 (fail-open,
+# never blocking). On a 429 the friendly server detail is emitted via the hook JSON-output
+# `systemMessage` field (shown to the user, non-blocking — never exit 2 / decision:block) and the
+# Nth-turn snapshot nudge below is skipped (its memory_write would hit the same paused-writes limit).
+response="$(printf '%s' "$body" | curl -s --max-time 8 -w '\n%{http_code}' -X POST "$API_BASE/api/v1/capture" \
   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
-  --data @- >/dev/null 2>&1
+  --data @- 2>/dev/null)" || response=""
+http_code="${response##*$'\n'}"
+if [ "$http_code" = "429" ]; then
+  printf '%s' "${response%$'\n'*}" | python3 -c 'import json, sys
+try:
+    detail = json.load(sys.stdin).get("detail")
+except Exception:
+    detail = None
+if not (isinstance(detail, str) and detail.strip()):
+    detail = "usage limit reached — memory writes pause and resume automatically; your memories are safe."
+print(json.dumps({"systemMessage": "[UltraMemory] " + detail.strip()}))' 2>/dev/null || true
+  exit 0
+fi
 
 # --- Every Nth turn: in-band session-snapshot nudge (Stop additionalContext, CC >= 2.1.163) ---
 # stop_hook_active already exited above, so this stdout costs exactly ONE continuation of the

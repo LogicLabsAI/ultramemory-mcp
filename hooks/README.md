@@ -77,14 +77,23 @@ anti-confabulation guarantees:
 - **Policy override.** A briefing containing `[COMPANY POLICY]` is **always injected whole**,
   regardless of decision or threshold — company policy must reach the model even when the gate
   abstains.
-- **Hard cap.** The injected context is always truncated at **9,500 characters** (Claude Code's
-  `additionalContext` limit is 10,000).
+- **Hard cap.** The injected context is truncated at **9,500 characters** (Claude Code's
+  `additionalContext` limit is 10,000). Turns whose briefing contains a `[COMPANY POLICY]` block
+  escalate the cap to `ULTRAMEMORY_HOOK_POLICY_BUDGET` (default **12,000**) so whole policies are
+  never truncated client-side.
+- **Inline limit notices.** When any enforced usage limit is at **≥80%**, the recall response
+  carries a limit state (the `X-Limit-State` header / `limit_notice` field) and the hook appends
+  one short line to the injected context — `[UltraMemory] You're at 87% of your 5-hour limit …` —
+  so you see it in the terminal, live percentage every turn. A `429` limit-reached response
+  injects the friendly limit message (window, exact reset time, upgrade link) instead of failing
+  silent. Both paths stay fail-open and never block the turn.
 
 ### Environment variables
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `ULTRAMEMORY_HOOK_BUDGET` | `2000` | `max_characters` budget for the preview briefing |
+| `ULTRAMEMORY_HOOK_POLICY_BUDGET` | `12000` | injection cap for turns whose briefing contains a `[COMPANY POLICY]` block — replaces the default 9,500-char cap on those turns so whole policies arrive untruncated |
 | `ULTRAMEMORY_MIN_CONFIDENCE` | `low` | `low` \| `medium` \| `high` — minimum gate band to inject; `low` (default) injects medium/high (verify/answer), `high` injects only answer-grade recalls. `[COMPANY POLICY]` briefings bypass this |
 | `ULTRAMEMORY_CACHE` | *(unset)* | set to `off` to disable memoization + dedupe entirely (every call hits the API, no cache file is touched) |
 
@@ -101,6 +110,12 @@ carries an `observed_at` timestamp so relative dates ("yesterday") resolve to ab
 facts are **deduped server-side**, and it is **fail-open**: any problem (no key, no network, no
 `curl`/`python3`, nothing durable) writes nothing and exits `0`, so it never blocks or slows your
 turn.
+
+If a write hits a usage limit (HTTP `429`), the hook **surfaces the friendly limit message to
+you** via the hook `systemMessage` output field — which window, that writes are paused, the exact
+reset time, and the upgrade link — instead of discarding the response. It still exits `0` and
+never blocks the turn (the Nth-turn snapshot nudge below is skipped on those turns, since its
+`memory_write` would hit the same paused-writes limit).
 
 It reuses the same environment variables as the recall hook — `ULTRAMEMORY_API_KEY` (required) and
 `ULTRAMEMORY_API_BASE` (optional, defaults to `https://api.ultramemory.us`).
@@ -229,6 +244,17 @@ prompt-submit budget while still returning the whole grounded briefing.
 
 ## Changelog
 
+- **1.8.0** — Limit visibility (usage-limits program U9/C7) + policy budget. **Recall hook:** when
+  any enforced usage limit is ≥80% it appends the live notice as one `[UltraMemory] …` line to the
+  injected context (rendered from the `X-Limit-State` header / `limit_notice` field, memo-cache
+  compatible), and a `429` limit-reached response injects the friendly limit message (window, exact
+  reset time, upgrade link) instead of silent fail-open — fail-open behavior otherwise preserved.
+  **Capture hook:** stops piping the capture response to `/dev/null` — a `429` limit_reached is
+  surfaced to the user via the hook `systemMessage` field (writes paused + when they resume),
+  still exit `0`, never blocking. **Policy budget (flag ④, parked v1.7.1 candidate):** turns whose
+  briefing contains `[COMPANY POLICY]` escalate the client injection cap from 9,500 to
+  `ULTRAMEMORY_HOOK_POLICY_BUDGET` (default 12,000) so policies arrive whole; non-policy turns
+  unchanged.
 - **1.7.0** — Token-economics upgrade. **Fix:** stdin is now parsed as the Claude Code hook JSON —
   the query is always the extracted `.prompt` (falling back to raw stdin when stdin isn't JSON),
   never the whole hook JSON envelope, and `.session_id` keys the new per-session dedupe set. New:

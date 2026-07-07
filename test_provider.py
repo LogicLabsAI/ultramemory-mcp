@@ -283,14 +283,26 @@ def test_prefetch_gated_402_falls_back_to_plain_recall(monkeypatch):
     assert "gated_paywall" in p._notified  # surfaced once
 
 
-def test_sync_turn_write_quota_429_notifies_and_survives(monkeypatch):
-    """An over-quota write (429) must not be swallowed silently nor raise — it notifies once so the
-    agent/operator knows memory stopped growing."""
-    rec = _Recorder()
+# Window-accurate 429 mock — the shape the backend actually emits for a hit usage window
+# (tenancy._limit_exceeded): friendly detail + machine-readable X-Limit-* headers.
+_LIMIT_429_DETAIL = (
+    "You've reached your free plan's 5-hour limit (25 of 25). Your memories are safe — recall "
+    "still works. It resets at 2026-07-07T09:15:00+00:00, or upgrade for more headroom: "
+    "https://app.ultramemory.us/upgrade"
+)
+_LIMIT_429_HEADERS = {
+    "Retry-After": "1800",
+    "X-Limit-Window": "5h",
+    "X-Limit-Reset": "2026-07-07T09:15:00+00:00",
+    "X-Upgrade-Url": "https://app.ultramemory.us/upgrade",
+}
 
+
+def _make_with_429_writes(monkeypatch, rec):
+    """Provider whose /api/v1/permanent writes 429 with the window-accurate structured response."""
     def handler(request):
         if request.url.path == "/api/v1/permanent":
-            return httpx.Response(429, json={"detail": "monthly quota exceeded"})
+            return httpx.Response(429, json={"detail": _LIMIT_429_DETAIL}, headers=_LIMIT_429_HEADERS)
         return rec.handler(request)
 
     p = _make(monkeypatch, rec)
@@ -298,8 +310,64 @@ def test_sync_turn_write_quota_429_notifies_and_survives(monkeypatch):
         transport=httpx.MockTransport(handler), base_url=p._base_url,
         headers={"Authorization": f"Bearer {p._api_key}", "Content-Type": "application/json"},
     )
+    return p
+
+
+def test_sync_turn_limit_429_relays_window_accurate_message(monkeypatch):
+    """A blocked capture (429) must not be swallowed silently nor raise — the WINDOW-ACCURATE
+    message (from the structured response, never an assumed window) rides the next turn's
+    recall block, in-conversation."""
+    rec = _Recorder()
+    p = _make_with_429_writes(monkeypatch, rec)
     p.sync_turn("hi there", "hello back")  # must not raise even though the write is blocked
-    assert "write_quota" in p._notified
+    out = p.prefetch("what plan is Acme on?")  # next turn: the limit message rides the recall block
+    assert "5-hour limit" in out and "2026-07-07T09:15:00+00:00" in out
+    assert "https://app.ultramemory.us/upgrade" in out
+    assert "Remembered (UltraMemory" in out  # recall itself keeps working (fail-open)
+
+
+def test_tool_memory_write_429_returns_structured_limit_reached(monkeypatch):
+    """The memory_write tool relays a structured limit_reached (correct window + reset + upgrade
+    link from the response headers) instead of the generic 'write failed'."""
+    rec = _Recorder()
+    p = _make_with_429_writes(monkeypatch, rec)
+    res = json.loads(p.handle_tool_call("memory_write", {"entity": "Acme", "key": "plan", "value": "Pro"}))
+    assert res["status"] == "limit_reached"
+    assert res["window"] == "5h"
+    assert res["reset_at"] == "2026-07-07T09:15:00+00:00"
+    assert res["upgrade_url"] == "https://app.ultramemory.us/upgrade"
+    assert res["memory_safe"] is True
+    assert res["message"] == _LIMIT_429_DETAIL
+    assert "error" not in res
+
+
+def test_prefetch_attaches_limit_notice_once_per_turn(monkeypatch):
+    """A >=80% X-Limit-State advisory on a recall response renders the wedge notice on the recall
+    block at most once per turn; sync_turn closes the turn and the next turn re-attaches a fresh
+    notice — even when recall abstains."""
+    rec = _Recorder()
+    state = json.dumps({"window": "5h", "label": "5-hour", "pct": 88, "used": 22, "cap": 25,
+                        "resets_at": "2026-07-07T09:15:00+00:00", "scope": "org"})
+
+    def handler(request):
+        resp = rec.handler(request)
+        if request.url.path == "/api/v1/recall/gated":
+            resp.headers["X-Limit-State"] = state
+        return resp
+
+    p = _make(monkeypatch, rec)
+    p._client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url=p._base_url,
+        headers={"Authorization": f"Bearer {p._api_key}", "Content-Type": "application/json"},
+    )
+    out1 = p.prefetch("what plan is Acme on?")
+    assert "You're at 88% of your 5-hour limit (22 of 25)" in out1
+    assert "https://app.ultramemory.us/upgrade" in out1
+    out2 = p.prefetch("what seats does Acme have?")  # same turn -> the notice attached once only
+    assert "88%" not in out2
+    p.sync_turn("q", "a")  # closes the turn
+    out3 = p.prefetch("tell me nothing grounded")  # abstain -> empty block, the notice still rides
+    assert "You're at 88% of your 5-hour limit" in out3
 
 
 def test_sync_turn_sends_feedback_when_memory_used(monkeypatch):
