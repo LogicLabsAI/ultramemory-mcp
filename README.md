@@ -29,6 +29,61 @@ Connectors → **Add custom connector** → URL `https://api.ultramemory.us/mcp`
 prompted. The server speaks **OAuth 2.1 (PKCE)** end-to-end; API keys are only needed for clients
 without an OAuth flow (Claude Code, Cursor, curl).
 
+## Install options
+
+Two ways to run UltraMemory — pick one:
+
+### Tier 1 — UltraMemory (MCP)
+
+Simple connect: point any MCP client at the hosted endpoint and you get the six memory tools.
+**Memory tools, no local caching.**
+
+```bash
+claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
+  --header "Authorization: Bearer um_YOUR_KEY"
+```
+
+### Tier 2 — UltraMemory + Turbo Token Saver
+
+The full client plus the Claude Code recall hook — a locally-ejected cache (`~/.ultramemory/cache.json`)
+**plus** payload tiering (preview-tier recall + per-session dedupe) that cuts per-turn token spend from
+thousands to hundreds (see [Token economics](#token-economics)). Everything in Tier 1, plus
+deterministic recall-first injection on every prompt.
+
+1. Drop the recall hook (and its optional cache module) into your project's Claude config:
+   ```bash
+   mkdir -p .claude/hooks \
+     && curl -fsSL https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main/hooks/recall-first-hook.sh -o .claude/hooks/recall-first-hook.sh \
+     && curl -fsSL https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main/cache.py -o .claude/hooks/cache.py \
+     && chmod +x .claude/hooks/recall-first-hook.sh
+   ```
+2. Export your key (get one free at https://ultramemory.us — no credit card required):
+   ```bash
+   export ULTRAMEMORY_API_KEY=um_YOUR_KEY
+   ```
+3. Register the hook in `.claude/settings.json`:
+   ```json
+   {
+     "hooks": {
+       "UserPromptSubmit": [
+         {
+           "matcher": "",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/recall-first-hook.sh",
+               "timeout": 10
+             }
+           ]
+         }
+       ]
+     }
+   }
+   ```
+
+Full details (the `Stop` capture hook, global install, per-project scopes) live in
+[`hooks/README.md`](hooks/README.md).
+
 ## Tools
 
 The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes six tools:
@@ -189,7 +244,9 @@ Want deterministic memory in Claude Code without Hermes? Two copy-paste, fail-op
   **session snapshot** via the bundled [`ultramemory-snapshot` Skill](skills/ultramemory-snapshot/)
   (Claude Code ≥ 2.1.163).
 
-Both are fail-open and copy-paste runnable. See [`hooks/README.md`](hooks/README.md).
+Both are fail-open and copy-paste runnable. The copy-paste recall-hook install now lives in
+[Install options → Tier 2](#install-options) above; full details (capture hook, global install,
+per-project scopes) are in [`hooks/README.md`](hooks/README.md).
 
 ## Token economics
 
