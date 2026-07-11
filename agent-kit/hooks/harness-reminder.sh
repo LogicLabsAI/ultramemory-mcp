@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# UserPromptSubmit hook — injects the harness routing reminder into each turn's context.
+# Firmer, per-prompt counterpart to the advisory rule in ~/.claude/CLAUDE.md.
+cat <<'JSON'
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"HARNESS REMINDER: If this turn will implement a multi-item plan or change 2+ files (a substantive build where each piece must actually get done and be verified), route it through the harness rather than ad-hoc edits or unbound subagents: (1) ground an atomic checklist by verifying every path, literal, schema, and endpoint against real source, never from memory; (2) STOP for explicit user approval of the checklist AND the gate command before building; (3) execute via checklist-bound-execution, which arms the .claude/.harness-active Stop gate, binds every spawned worker to its checklist item verbatim, and verifies each item adversarially with loop-back until the gate is green. Never fan work out to subagents or a Workflow without binding each to a verbatim checklist item. Skip the harness for trivial single-file edits, pure Q&A, or read-only investigation. Typing /harness triggers this flow explicitly."}}
+JSON

@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# scripts/gate.sh — STATIC verification gate for the UltraMemory harness.
+# The harness Stop hook runs this before a turn can end (when .claude/.harness-active is armed).
+# STATIC ONLY: build / lint / type-check / tests. NEVER deploy, publish, or make paid/live calls.
+# It auto-detects your stack and runs only the validators that apply; a missing validator that a
+# present config file implies is a LOUD failure, not a silent skip.
+set -uo pipefail
+fails=0
+run() { echo "== $1 =="; if eval "$2"; then echo "ok   $1"; else echo "FAIL $1"; fails=$((fails+1)); fi; }
+need() { command -v "$1" >/dev/null 2>&1 || { echo "FAIL missing validator: $1 (implied by $2)"; fails=$((fails+1)); return 1; }; }
+
+# ── Node / TypeScript ──
+if [ -f package.json ]; then
+  need npm package.json && {
+    grep -q '"build"' package.json && run "build" "npm run build"
+    grep -q '"lint"'  package.json && run "lint"  "npm run lint"
+    grep -q '"test"'  package.json && run "test"  "npm test --silent"
+    grep -q '"typecheck"' package.json && run "typecheck" "npm run typecheck"
+  }
+fi
+
+# ── Python ──
+if [ -f pyproject.toml ] || [ -f setup.py ] || ls ./*.py >/dev/null 2>&1; then
+  command -v ruff  >/dev/null 2>&1 && run "ruff"  "ruff check ."
+  command -v mypy  >/dev/null 2>&1 && run "mypy"  "mypy ."
+  command -v pytest >/dev/null 2>&1 && run "pytest" "pytest -q"
+fi
+
+# ── Go ──
+if [ -f go.mod ]; then need go go.mod && { run "go build" "go build ./..."; run "go test" "go test ./..."; }; fi
+
+# ── Rust ──
+if [ -f Cargo.toml ]; then need cargo Cargo.toml && { run "cargo build" "cargo build --quiet"; run "cargo test" "cargo test --quiet"; }; fi
+
+# ── shell scripts ──
+if command -v shellcheck >/dev/null 2>&1; then
+  shs="$(git ls-files '*.sh' 2>/dev/null || find . -name '*.sh' -not -path './.git/*')"
+  [ -n "$shs" ] && run "shellcheck" "echo \"$shs\" | xargs -r shellcheck -S error"
+fi
+
+echo
+if [ "$fails" -eq 0 ]; then echo "GATE GREEN"; exit 0; else echo "GATE RED ($fails failures)"; exit 1; fi

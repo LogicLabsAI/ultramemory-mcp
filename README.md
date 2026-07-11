@@ -31,7 +31,7 @@ without an OAuth flow (Claude Code, Cursor, curl).
 
 ## Install options
 
-Two ways to run UltraMemory — pick one:
+Three tiers — pick one (each builds on the last):
 
 ### Tier 1 — UltraMemory (MCP)
 
@@ -83,6 +83,33 @@ deterministic recall-first injection on every prompt.
 
 Full details (the `Stop` capture hook, global install, per-project scopes) live in
 [`hooks/README.md`](hooks/README.md).
+
+### Tier 3 — UltraMemory Agent Kit
+
+Everything in Tier 2 **plus the harness**: the grounding + `checklist-bound-execution` methodology as
+installable skills and subagents (`checklist-worker`, `checklist-verifier`) with a Stop-gate, plus
+optional MCP setup (Context7 keyless docs, Exa bring-your-own-key) and our **Playwright Human Vision
+Control** skill. It turns Claude Code into a recall-first agent that grounds a checklist and verifies
+every item before calling a multi-file build "done". Full details: [`agent-kit/README.md`](agent-kit/README.md).
+
+**One-line guided installer** (prompts for your key, picks Tier 2 or 3, wires everything, verifies):
+
+```bash
+bash <(curl -fsSL https://ultramemory.io/kit.sh)
+# non-interactive: bash <(curl -fsSL https://ultramemory.io/kit.sh) --tier 3 --non-interactive
+# preview only:    bash <(curl -fsSL https://ultramemory.io/kit.sh) --dry-run
+# or via the CLI:  uvx ultramemory-hermes kit install
+```
+
+**Claude Code plugin marketplace** (advanced / team — bundles skills + subagents + hooks + MCP in one enable):
+
+```
+/plugin marketplace add LogicLabsAI/ultramemory-mcp
+/plugin install ultramemory-kit@ultramemory
+```
+
+Bring your own UltraMemory key. Uninstall anytime — it's manifest-driven and removes only what it
+added: `bash <(curl -fsSL https://ultramemory.io/kit.sh) --uninstall`.
 
 ## Tools
 

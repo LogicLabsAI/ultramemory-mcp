@@ -1,0 +1,23 @@
+{
+  "name": "ultramemory",
+  "owner": {
+    "name": "LogicLabsAI",
+    "email": "support@ultramemory.us"
+  },
+  "metadata": {
+    "description": "UltraMemory plugins for Claude Code — recall-first memory, token economics, and the harness."
+  },
+  "plugins": [
+    {
+      "name": "ultramemory-kit",
+      "source": "./agent-kit",
+      "description": "UltraMemory Agent Kit (Tier 3) — Turbo Token Saver (recall-first hook + client cache) + the harness (grounding / checklist-bound execution skills, subagents, Stop gate) + optional MCP setup (Context7 keyless, Exa BYO) and our Playwright Human Vision Control skill. Bring your own UltraMemory key.",
+      "version": "1.9.0",
+      "author": {
+        "name": "LogicLabsAI",
+        "email": "support@ultramemory.us"
+      },
+      "category": "productivity"
+    }
+  ]
+}

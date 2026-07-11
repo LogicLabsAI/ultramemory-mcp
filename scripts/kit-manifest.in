@@ -1,0 +1,30 @@
+# kit-manifest.in — curation allowlist for scripts/export-kit.sh (UltraMemory Agent Kit).
+#
+# EXPLICIT allowlist — NEVER a wildcard. Only files listed here are exported from the private
+# ~/.claude harness source of truth into agent-kit/. Each line: <src-under-~/.claude>|<dest-under-agent-kit>
+# Lines starting with '#' and blank lines are ignored. These files are the verbatim-clean core
+# (P2-1 grounding: 0 personal paths, 0 secrets, 0 business refs) and are copied byte-for-byte;
+# export records both the dest sha256 and the live-source sha256 so `--check` can detect drift.
+#
+# NOT listed here (hand-curated in-repo, NOT machine-copied — they need real rewording, so a raw
+# copy would re-introduce private references; verified instead by the gate's deny-scan + presence
+# checks): agent-kit/skills/swarm/SKILL.md (generic rewrite of the parallel-fan-out pattern) and
+# agent-kit/skills/playwright-human-mode/SKILL.md (our Playwright Human Vision Control skill,
+# adapted from ccpb-playwright-human-mode). If the private originals change, re-curate those by hand.
+
+# ── harness skills (methodology) ──
+skills/harness/SKILL.md|skills/harness/SKILL.md
+skills/checklist-bound-execution/SKILL.md|skills/checklist-bound-execution/SKILL.md
+skills/checklist-bound-execution/references/workflow-template.js|skills/checklist-bound-execution/references/workflow-template.js
+skills/checklist-bound-execution/references/schemas.md|skills/checklist-bound-execution/references/schemas.md
+skills/checklist-bound-execution/references/checklist-format.md|skills/checklist-bound-execution/references/checklist-format.md
+skills/atomic-level-checklist-md-confirm-approval-needed/SKILL.md|skills/atomic-level-checklist-md-confirm-approval-needed/SKILL.md
+skills/research/SKILL.md|skills/research/SKILL.md
+
+# ── harness subagents ──
+agents/checklist-worker.md|agents/checklist-worker.md
+agents/checklist-verifier.md|agents/checklist-verifier.md
+
+# ── harness hooks ──
+hooks/harness-gate.sh|hooks/harness-gate.sh
+hooks/harness-reminder.sh|hooks/harness-reminder.sh

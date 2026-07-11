@@ -1,0 +1,83 @@
+{
+  "kit": "ultramemory-agent-kit",
+  "version": "1.9.0",
+  "files": [
+    {
+      "path": "agent-kit/skills/harness/SKILL.md",
+      "sha256": "c7923b0353e5890f72542b5772c95b9e5cbb05c191df2985c07d48e66dcba514",
+      "source": "skills/harness/SKILL.md",
+      "source_sha256": "c7923b0353e5890f72542b5772c95b9e5cbb05c191df2985c07d48e66dcba514",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/skills/checklist-bound-execution/SKILL.md",
+      "sha256": "8a7724a2c5ceef76953bd83cedee22f55d2e1ebb7eeeb8b35bcb9a4396ec6649",
+      "source": "skills/checklist-bound-execution/SKILL.md",
+      "source_sha256": "8a7724a2c5ceef76953bd83cedee22f55d2e1ebb7eeeb8b35bcb9a4396ec6649",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/skills/checklist-bound-execution/references/workflow-template.js",
+      "sha256": "47e3231f222fb4c968012368d49ee595826ad7735c71989c33f2171a23aa709d",
+      "source": "skills/checklist-bound-execution/references/workflow-template.js",
+      "source_sha256": "47e3231f222fb4c968012368d49ee595826ad7735c71989c33f2171a23aa709d",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/skills/checklist-bound-execution/references/schemas.md",
+      "sha256": "740f4ea9c4123f474bbe0bc5aaec8ba0c31ffa4fee691641032cbf1d2908e3ba",
+      "source": "skills/checklist-bound-execution/references/schemas.md",
+      "source_sha256": "740f4ea9c4123f474bbe0bc5aaec8ba0c31ffa4fee691641032cbf1d2908e3ba",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/skills/checklist-bound-execution/references/checklist-format.md",
+      "sha256": "9d34eb0038e0f0b2fbddf5576549d73706ea5ab5a5fab2c54f78f3148fdd1185",
+      "source": "skills/checklist-bound-execution/references/checklist-format.md",
+      "source_sha256": "9d34eb0038e0f0b2fbddf5576549d73706ea5ab5a5fab2c54f78f3148fdd1185",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/skills/atomic-level-checklist-md-confirm-approval-needed/SKILL.md",
+      "sha256": "2c24506c9b750c4eb8b792ffb644da7f0646e35d1d3305f8156ec494296622bd",
+      "source": "skills/atomic-level-checklist-md-confirm-approval-needed/SKILL.md",
+      "source_sha256": "2c24506c9b750c4eb8b792ffb644da7f0646e35d1d3305f8156ec494296622bd",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/skills/research/SKILL.md",
+      "sha256": "9d588ebc68678a15493aa366d586c36aaf4fd17de71e32ffd293eab75ace2a5b",
+      "source": "skills/research/SKILL.md",
+      "source_sha256": "9d588ebc68678a15493aa366d586c36aaf4fd17de71e32ffd293eab75ace2a5b",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/agents/checklist-worker.md",
+      "sha256": "4f18228ac3aff743a53359f16636054fae133d8e2ed6968717f5bd6e8bbe4810",
+      "source": "agents/checklist-worker.md",
+      "source_sha256": "4f18228ac3aff743a53359f16636054fae133d8e2ed6968717f5bd6e8bbe4810",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/agents/checklist-verifier.md",
+      "sha256": "30c85dc983d7fd23c3d929350c232cecf7be35d142392b06b6bd3cc40ecbffeb",
+      "source": "agents/checklist-verifier.md",
+      "source_sha256": "30c85dc983d7fd23c3d929350c232cecf7be35d142392b06b6bd3cc40ecbffeb",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/hooks/harness-gate.sh",
+      "sha256": "436d155de9c3f5d02b335fedc0f875c07e18684b2af6f0cbe95d90337e9fba35",
+      "source": "hooks/harness-gate.sh",
+      "source_sha256": "436d155de9c3f5d02b335fedc0f875c07e18684b2af6f0cbe95d90337e9fba35",
+      "mode": "copy"
+    },
+    {
+      "path": "agent-kit/hooks/harness-reminder.sh",
+      "sha256": "f0841283b9657cc1e92909e96b7cec3fb04a4623d2bc9e1c3060bf89d0460199",
+      "source": "hooks/harness-reminder.sh",
+      "source_sha256": "f0841283b9657cc1e92909e96b7cec3fb04a4623d2bc9e1c3060bf89d0460199",
+      "mode": "copy"
+    }
+  ]
+}

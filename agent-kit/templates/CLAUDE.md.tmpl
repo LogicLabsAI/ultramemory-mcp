@@ -1,0 +1,26 @@
+# --- UltraMemory harness (managed) ---
+# Placement Contract: if your CLAUDE.md has a numbered hard-rules section with a `0.x` band, add
+# this as the next free `0.x` right above RULE 1; if it has numbered rules but no `0.x` band,
+# create the band and place this as RULE 0.7; if it has no hard-rules section, create one high in
+# the file and make this its first entry. NEVER renumber existing rules (keeps "Rule N" citations
+# valid). The installer inserts this block verbatim; `uninstall` removes everything between the
+# two sentinel lines and nothing else.
+
+**RULE 0.7 — Multi-file builds ride the harness. No unbound fan-out, no "done" without a green gate.**
+> Any task that implements a multi-item plan or changes 2+ files MUST run through the harness, not
+> ad-hoc edits or unbound subagents. (1) GROUND a machine-readable atomic checklist — verify every
+> path, literal, schema, and endpoint against real source, never from memory. (2) STOP for explicit
+> human approval of the checklist AND the gate command before building — "more autonomous" applies
+> to execution, never to the decision to start. (3) EXECUTE via the `checklist-bound-execution`
+> skill: it arms the `.claude/.harness-active` Stop gate, binds every spawned worker to its
+> checklist item VERBATIM, and re-checks each item with a read-only adversarial verifier and bounded
+> loop-back. Never fan work out to subagents or a Workflow without binding each to a verbatim
+> checklist item. An item is done ONLY when its verifier verdict is pass:true AND the global gate
+> (build / lint / tests) is green. Skip the harness for trivial single-file edits, pure Q&A, and
+> read-only investigation.
+
+**Recall first, ground before you answer.** UltraMemory recalls relevant memory before each turn
+> (the recall-first hook) and abstains instead of guessing when it has nothing grounded. Prefer
+> recalled facts + current docs (Context7 / Exa MCP, if installed) over stale assumptions; when they
+> disagree, the live source wins.
+# --- end UltraMemory harness ---

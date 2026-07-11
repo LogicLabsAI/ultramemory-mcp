@@ -1,0 +1,16 @@
+{
+  "//": "Merge these into ~/.claude/settings.json (global) — the UltraMemory Agent Kit installer does this for you. Paths assume the kit's hooks are installed under ~/.claude/hooks/.",
+  "hooks": {
+    "UserPromptSubmit": [
+      { "matcher": "", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/recall-first-hook.sh", "timeout": 10 },
+        { "type": "command", "command": "$HOME/.claude/hooks/harness-reminder.sh", "timeout": 5 }
+      ] }
+    ],
+    "Stop": [
+      { "matcher": "", "hooks": [
+        { "type": "command", "command": "$HOME/.claude/hooks/harness-gate.sh", "timeout": 600 }
+      ] }
+    ]
+  }
+}

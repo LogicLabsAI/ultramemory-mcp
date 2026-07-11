@@ -29,7 +29,11 @@ import re
 import sys
 from typing import Optional
 
-from . import DEFAULT_BASE_URL, UltraMemoryProvider
+try:
+    from . import DEFAULT_BASE_URL, UltraMemoryProvider
+except ImportError:  # run as a flat script (dev / CI gate) rather than the installed package
+    DEFAULT_BASE_URL = "https://api.ultramemory.us"
+    UltraMemoryProvider = None  # only `enable` needs it; imported lazily there
 
 __all__ = ["main"]
 
@@ -214,6 +218,9 @@ def _cmd_enable(args: argparse.Namespace) -> int:
         values["auto_capture"] = "true" if args.auto_capture else "false"
     if args.recall_k is not None:
         values["recall_k"] = str(args.recall_k)
+    if UltraMemoryProvider is None:
+        print("error: run `enable` from the installed package (pip install ultramemory-hermes).", file=sys.stderr)
+        return 2
     provider = UltraMemoryProvider()
     if values:
         provider.save_config(values, hermes_home)
@@ -238,6 +245,57 @@ def _cmd_enable(args: argparse.Namespace) -> int:
     )
     print("Restart Hermes (or start a new session) to pick up the change.")
     return 0
+
+
+def _cmd_kit(args: argparse.Namespace) -> int:
+    """Run the UltraMemory Agent Kit installer / uninstaller / exporter.
+
+    ``install`` / ``uninstall`` run the shell scripts from a local checkout when present (``uvx``
+    from a source tree), else download them from the pinned repo (the ``uvx ultramemory-hermes``
+    path). ``export`` / ``check`` are maintainer tools and require the source checkout.
+    """
+    import subprocess
+    import tempfile
+    import urllib.request
+
+    raw = os.environ.get(
+        "ULTRAMEMORY_KIT_RAW",
+        "https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main",
+    )
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidates = [here, os.path.dirname(here), os.getcwd()]
+
+    def _local(rel: str) -> Optional[str]:
+        for base in candidates:
+            p = os.path.join(base, rel)
+            if os.path.isfile(p):
+                return p
+        return None
+
+    action = args.kit_action
+    passthrough = list(getattr(args, "rest", []) or [])
+
+    if action in ("install", "uninstall"):
+        name = "install.sh" if action == "install" else "uninstall.sh"
+        path = _local(name)
+        if path is None:
+            data = urllib.request.urlopen(raw + "/" + name, timeout=30).read()  # noqa: S310
+            tf = tempfile.NamedTemporaryFile("wb", suffix=".sh", delete=False)
+            tf.write(data)
+            tf.close()
+            path = tf.name
+        return subprocess.call(["bash", path, *passthrough])
+
+    # export / check — maintainer tools, need the source tree
+    path = _local("scripts/export-kit.sh")
+    if path is None:
+        print(
+            "error: `ultramemory kit " + action + "` needs the ultramemory-mcp source checkout "
+            "(it curates ~/.claude into agent-kit/). Clone the repo and run it there.",
+            file=sys.stderr,
+        )
+        return 2
+    return subprocess.call(["bash", path, *(["--check"] if action == "check" else [])])
 
 
 def _add_bool_flag(p: argparse.ArgumentParser, name: str, help_text: str) -> None:
@@ -273,6 +331,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="override $HERMES_HOME (where .env / config.yaml live)",
     )
     enable.set_defaults(func=_cmd_enable)
+
+    kit = sub.add_parser(
+        "kit",
+        help="install / uninstall the UltraMemory Agent Kit (Tier 3), or export/check it (maintainer)",
+    )
+    kit.add_argument(
+        "kit_action",
+        choices=["install", "uninstall", "export", "check"],
+        help="install (guided), uninstall (manifest-driven), export (curate ~/.claude → agent-kit/), "
+        "check (drift guard)",
+    )
+    kit.add_argument(
+        "rest",
+        nargs=argparse.REMAINDER,
+        help="extra args passed through to the installer (e.g. --tier 3 --dry-run)",
+    )
+    kit.set_defaults(func=_cmd_kit)
 
     return parser
 
