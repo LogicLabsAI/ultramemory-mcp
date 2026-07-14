@@ -611,8 +611,10 @@ class UltraMemoryProvider(MemoryProvider):
                     _cache.memo_put(q[:4096], self._scope, "both", response=data)
             decision = data.get("decision")
             facts = data.get("results") or []
-            if decision == "abstain" or not facts:
-                return ""  # honest: nothing grounded — don't inject noise
+            if not facts:
+                return ""  # truly nothing grounded — don't inject noise
+            # R0-A: abstain WITH results still injects (marked low-confidence below) instead of
+            # vanishing — mirrors the server _ask_decision remap; only a true-empty set stays silent.
             # The gated response now assembles a ready-to-use sectioned briefing (S7.1) — inject
             # it directly instead of re-assembling our own fact lines.
             context_block = (data.get("context_block") or "").strip()
@@ -632,7 +634,9 @@ class UltraMemoryProvider(MemoryProvider):
                 head += f", confidence {conf:.2f}"
             head += "):"
             block = head + "\n" + context_block
-            if decision == "verify":
+            if decision == "abstain":
+                block += "\n(low confidence — verify before relying)"
+            elif decision == "verify":
                 block += "\n(verify these before relying on them)"
             return block
         return self._plain_recall_block(q)

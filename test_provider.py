@@ -163,6 +163,27 @@ def test_prefetch_gated_abstain_injects_nothing(monkeypatch):
     assert p.prefetch("tell me nothing grounded") == ""
 
 
+def test_prefetch_gated_abstain_with_results_injects_marked(monkeypatch):
+    """R0-A: abstain WITH results still injects the briefing, clearly marked low-confidence, instead
+    of vanishing (mirrors the server _ask_decision remap). A true-empty result set still injects ''."""
+    class _AbstainRec(_Recorder):
+        def handler(self, request):
+            body = json.loads(request.content.decode() or "{}") if request.content else {}
+            self.calls.append((request.url.path, body))
+            if request.url.path == "/api/v1/recall/gated":
+                return httpx.Response(200, json={
+                    "event_id": "e-abstain", "decision": "abstain", "confidence": 0.37,
+                    "results": [{"entity": "Acme", "key": "plan", "value": "Pro", "fact_id": "f-abstain"}],
+                    "context_block": "Acme · plan = Pro",
+                })
+            return httpx.Response(404, json={"error": "no route"})
+
+    p = _make(monkeypatch, _AbstainRec())
+    out = p.prefetch("what plan is Acme on?")
+    assert "Acme" in out and "Pro" in out       # the fact reaches the agent (not dropped)
+    assert "low confidence" in out.lower()       # clearly marked as low confidence
+
+
 def test_prefetch_ungated(monkeypatch):
     rec = _Recorder()
     p = _make(monkeypatch, rec, gated="false")

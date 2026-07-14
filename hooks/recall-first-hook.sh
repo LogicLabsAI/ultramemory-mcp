@@ -155,9 +155,11 @@ def main():
     # the anti-confabulation wedge (the gate may abstain while a governing policy still binds).
     policy = "[COMPANY POLICY]" in block
     if not policy:
-        # Metamemory gate: when memory is unsure/empty it abstains — inject no briefing.
+        results = data.get("results") or []
+        # R0-A: abstain WITH results still injects the briefing marked low-confidence (do not drop it);
+        # a true-empty result set / empty block still injects nothing.
         if data.get("decision") == "abstain":
-            block = ""
+            block = (block + "\n(low confidence — verify before relying)") if (block and results) else ""
         else:
             # (d) client threshold: the decision encodes the confidence band (metamemory Rule 10:
             # high -> answer, medium -> verify, low -> abstain). Skip when the band is below
