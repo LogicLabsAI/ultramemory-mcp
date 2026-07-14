@@ -12,7 +12,7 @@
       "name": "ultramemory-kit",
       "source": "./agent-kit",
       "description": "UltraMemory Agent Kit (Tier 3) — Turbo Token Saver (recall-first hook + client cache) + the harness (grounding / checklist-bound execution skills, subagents, Stop gate) + optional MCP setup (Context7 keyless, Exa BYO) and our Playwright Human Vision Control skill. Bring your own UltraMemory key.",
-      "version": "1.9.0",
+      "version": "1.9.1",
       "author": {
         "name": "LogicLabsAI",
         "email": "support@ultramemory.us"
