@@ -129,6 +129,11 @@ bash <(curl -fsSL https://ultramemory.io/kit.sh)
 Bring your own UltraMemory key. Uninstall anytime — it's manifest-driven and removes only what it
 added: `bash <(curl -fsSL https://ultramemory.io/kit.sh) --uninstall`.
 
+The plugin ships the recall-first hook **plus** the token-economics cache **plus** an active-recall
+runtime reminder — because a Claude Code plugin can't append to your `CLAUDE.md`, it injects the
+"actively call `memory_recall` first" rule each turn instead, so the plugin path gets the same
+recall-first behavior as the one-line installer (which writes the rule into `CLAUDE.md`).
+
 ## Tools
 
 The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes seven tools:

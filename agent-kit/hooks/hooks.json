@@ -5,6 +5,7 @@
         "matcher": "",
         "hooks": [
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/recall-first-hook.sh", "timeout": 10 },
+          { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/recall-rule-reminder.sh", "timeout": 5 },
           { "type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/harness-reminder.sh", "timeout": 5 }
         ]
       }

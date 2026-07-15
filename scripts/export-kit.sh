@@ -65,7 +65,7 @@ done < "$ALLOW"
 # --- first-party Tier-2 hooks (from THIS repo, not ~/.claude) so the plugin is self-contained ---
 # Tier 3 includes Tier 2 (Turbo Token Saver): the recall-first hook + client cache travel with the
 # kit. These are already public in this repo; copy them next to the harness hooks in the kit.
-for f in hooks/recall-first-hook.sh hooks/capture-hook.sh; do
+for f in hooks/recall-first-hook.sh hooks/capture-hook.sh hooks/recall-rule-reminder.sh; do
   if [ -f "$REPO/$f" ]; then mkdir -p "$KIT/hooks"; cp "$REPO/$f" "$KIT/$f"; echo "  bundled agent-kit/$f (first-party)"; fi
 done
 if [ -f "$REPO/cache.py" ]; then cp "$REPO/cache.py" "$KIT/hooks/cache.py"; echo "  bundled agent-kit/hooks/cache.py (first-party)"; fi
