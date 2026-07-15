@@ -38,16 +38,121 @@ Three tiers — pick one (each builds on the last):
 Simple connect: point any MCP client at the hosted endpoint and you get the seven memory tools.
 **Memory tools, no local caching.**
 
+**Claude Code** — one paste: registers the MCP server and writes the active-recall rule to `CLAUDE.md`:
+
 ```bash
 claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
-  --header "Authorization: Bearer um_YOUR_KEY"
+  --header "Authorization: Bearer um_YOUR_KEY" \
+&& cat >> CLAUDE.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
 ```
 
-**Make it recall-first (any MCP client):** drop this into your agent once so it actually uses your
-memory instead of forgetting to call it:
+**Gemini CLI** — one paste: registers the MCP server and writes the active-recall rule to `GEMINI.md`:
 
-```text
-Add a standing rule so you always use my UltraMemory MCP memory. Detect your agent-instructions file and APPEND (never overwrite): Claude Code -> ./CLAUDE.md; Gemini CLI -> ./GEMINI.md; every other agent (Codex, Cursor, Windsurf, Cline, Copilot, OpenClaw...) -> ./AGENTS.md at the repo root. If unsure, write ./AGENTS.md and add a ./CLAUDE.md containing only @AGENTS.md. The rule to add: "Before answering, actively call the UltraMemory memory_recall (or search) MCP tool with my request and ground your answer in what it returns -- prefer it over your own or built-in memory; never claim you do not know a saved fact without recalling first. Persist durable new facts, decisions, and preferences with memory_write."
+```bash
+gemini mcp add -s user -t http ultramemory https://api.ultramemory.us/mcp \
+  -H "Authorization: Bearer um_YOUR_KEY" \
+&& cat >> GEMINI.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+**Cursor** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
+
+```bash
+python3 - <<'PY'
+import json,pathlib
+p=pathlib.Path.home()/".cursor"/"mcp.json"; p.parent.mkdir(parents=True,exist_ok=True)
+d=json.loads(p.read_text()) if p.exists() else {}
+d.setdefault("mcpServers",{})["ultramemory"]={"url":"https://api.ultramemory.us/mcp","headers":{"Authorization":"Bearer um_YOUR_KEY"}}
+p.write_text(json.dumps(d,indent=2))
+print("Cursor: wrote",p,"— Cursor may prompt an OAuth login; approve it (your key still attributes usage).")
+PY
+cat >> AGENTS.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+**Codex** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
+
+```bash
+mkdir -p ~/.codex && grep -q 'mcp_servers.ultramemory' ~/.codex/config.toml 2>/dev/null || cat >> ~/.codex/config.toml <<'EOF'
+
+[mcp_servers.ultramemory]
+url = "https://api.ultramemory.us/mcp"
+http_headers = { Authorization = "Bearer um_YOUR_KEY" }
+EOF
+cat >> AGENTS.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+**Windsurf** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
+
+```bash
+python3 - <<'PY'
+import json,pathlib
+p=pathlib.Path.home()/".codeium"/"windsurf"/"mcp_config.json"; p.parent.mkdir(parents=True,exist_ok=True)
+d=json.loads(p.read_text()) if p.exists() else {}
+d.setdefault("mcpServers",{})["ultramemory"]={"serverUrl":"https://api.ultramemory.us/mcp","headers":{"Authorization":"Bearer um_YOUR_KEY"}}
+p.write_text(json.dumps(d,indent=2))
+print("Windsurf: wrote",p)
+PY
+cat >> AGENTS.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+**Cline** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`. VS Code extension users: paste the same mcpServers block via the Cline panel > MCP Servers > Configure MCP Servers.
+
+```bash
+python3 - <<'PY'
+import json,pathlib
+p=pathlib.Path.home()/".cline"/"data"/"settings"/"cline_mcp_settings.json"; p.parent.mkdir(parents=True,exist_ok=True)
+d=json.loads(p.read_text()) if p.exists() else {}
+d.setdefault("mcpServers",{})["ultramemory"]={"type":"streamableHttp","url":"https://api.ultramemory.us/mcp","headers":{"Authorization":"Bearer um_YOUR_KEY"}}
+p.write_text(json.dumps(d,indent=2))
+print("Cline: wrote",p)
+PY
+cat >> AGENTS.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+**OpenClaw** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
+
+```bash
+openclaw mcp add ultramemory --url https://api.ultramemory.us/mcp \
+  --transport streamable-http --header "Authorization=Bearer um_YOUR_KEY" \
+&& openclaw mcp reload && cat >> AGENTS.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+**VS Code** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
+
+```bash
+code --add-mcp '{"name":"ultramemory","type":"http","url":"https://api.ultramemory.us/mcp","headers":{"Authorization":"Bearer um_YOUR_KEY"}}' \
+&& cat >> AGENTS.md <<'EOF'
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
 ```
 
 This applies to terminal/CLI MCP clients only. The claude.ai OAuth connector needs nothing here — no
