@@ -43,6 +43,16 @@ claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
   --header "Authorization: Bearer um_YOUR_KEY"
 ```
 
+**Make it recall-first (any MCP client):** drop this into your agent once so it actually uses your
+memory instead of forgetting to call it:
+
+```text
+Add a standing rule so you always use my UltraMemory MCP memory. Detect your agent-instructions file and APPEND (never overwrite): Claude Code -> ./CLAUDE.md; Gemini CLI -> ./GEMINI.md; every other agent (Codex, Cursor, Windsurf, Cline, Copilot, OpenClaw...) -> ./AGENTS.md at the repo root. If unsure, write ./AGENTS.md and add a ./CLAUDE.md containing only @AGENTS.md. The rule to add: "Before answering, actively call the UltraMemory memory_recall (or search) MCP tool with my request and ground your answer in what it returns -- prefer it over your own or built-in memory; never claim you do not know a saved fact without recalling first. Persist durable new facts, decisions, and preferences with memory_write."
+```
+
+This applies to terminal/CLI MCP clients only. The claude.ai OAuth connector needs nothing here — no
+terminal, no rule file.
+
 ### Tier 2 — UltraMemory + Turbo Token Saver
 
 The full client plus the Claude Code recall hook — a locally-ejected cache (`~/.ultramemory/cache.json`)
