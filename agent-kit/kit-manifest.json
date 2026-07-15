@@ -1,6 +1,6 @@
 {
   "kit": "ultramemory-agent-kit",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "files": [
     {
       "path": "agent-kit/skills/harness/SKILL.md",

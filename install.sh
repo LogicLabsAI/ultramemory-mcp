@@ -14,7 +14,7 @@
 # execute a partial script. Idempotent; writes a manifest so `--uninstall` removes only what it added.
 set -uo pipefail
 
-KIT_VERSION="1.9.2"
+KIT_VERSION="1.9.3"
 REPO_RAW="${ULTRAMEMORY_KIT_RAW:-https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main}"
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 UM_DIR="$HOME/.ultramemory"
@@ -168,6 +168,9 @@ install_tier2(){
   set_env_key "./.claude/settings.local.json" ULTRAMEMORY_API_KEY "$KEY"
   record file "./.claude/settings.local.json"
   ensure_gitignore ".claude/settings.local.json"
+  # Ship the active-recall CLAUDE.md rule alongside the hook (idempotent: place_claude_rule
+  # no-ops if the managed sentinel is already present, so a later Tier-3 run won't double-insert).
+  place_claude_rule "./CLAUDE.md"
   c_ok "Tier 2 wired (recall-first on every prompt)"
 }
 

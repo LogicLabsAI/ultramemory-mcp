@@ -19,8 +19,13 @@
 > (build / lint / tests) is green. Skip the harness for trivial single-file edits, pure Q&A, and
 > read-only investigation.
 
-**Recall first, ground before you answer.** UltraMemory recalls relevant memory before each turn
-> (the recall-first hook) and abstains instead of guessing when it has nothing grounded. Prefer
-> recalled facts + current docs (Context7 / Exa MCP, if installed) over stale assumptions; when they
-> disagree, the live source wins.
+**Recall first — actively, not just passively.**
+> UltraMemory recall-first hook injects prompt-relevant memory before each turn, but that is PASSIVE
+> and prompt-scoped. For anything the project should already know (a URL, a prior decision, where a
+> credential lives, whether we have done X, what the fix was last time) ACTIVELY call the
+> `memory_recall` or `search` tool FIRST; never answer from working memory or say
+> I-do-not-have-it / not-grounded-this-session without recalling. Persist durable facts and decisions
+> with `memory_write`. Pair with current library/API docs (Context7) and current external facts
+> (Exa) — that trio is the trifecta. The hook and this active-recall rule work TOGETHER; do not pick
+> one.
 # --- end UltraMemory harness ---

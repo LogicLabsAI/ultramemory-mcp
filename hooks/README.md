@@ -3,8 +3,11 @@
 Most memory tools only recall **if the model decides** to call the memory tool — so it still
 forgets. This hook removes the guesswork: it runs on **every** prompt you submit in Claude Code
 (the `UserPromptSubmit` event), recalls your top matches from UltraMemory, and injects them into
-the context **before the model answers**. Recall-first, guaranteed — because the harness runs it,
-not the model.
+the context **before the model answers**. What it guarantees is a deterministic **injection attempt**
+of prompt-relevant matches before the model answers (fail-open — see below), because the harness runs
+it, not the model. It does **not** make the agent actively recall for its own mid-reasoning lookups —
+that needs the active-recall `CLAUDE.md` rule (the kit ships one in
+`agent-kit/templates/CLAUDE.md.tmpl`); the hook and that rule are complementary.
 
 It is **fail-open**: any problem (no key, no network, no `python3`, empty results) injects
 nothing and exits `0`, so it can never block or slow your prompt beyond a short timeout.

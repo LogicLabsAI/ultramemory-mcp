@@ -47,8 +47,8 @@ claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
 
 The full client plus the Claude Code recall hook — a locally-ejected cache (`~/.ultramemory/cache.json`)
 **plus** payload tiering (preview-tier recall + per-session dedupe) that cuts per-turn token spend from
-thousands to hundreds (see [Token economics](#token-economics)). Everything in Tier 1, plus
-deterministic recall-first injection on every prompt.
+thousands to hundreds (see [Token economics](#token-economics)). Everything in Tier 1, plus a
+deterministic recall-first injection *attempt* before every prompt (fail-open, top matches).
 
 1. Drop the recall hook (and its optional cache module) into your project's Claude config:
    ```bash
@@ -80,6 +80,14 @@ deterministic recall-first injection on every prompt.
      }
    }
    ```
+4. Add the active-recall rule to your project's `CLAUDE.md` so the agent also recalls for its own
+   mid-reasoning lookups — not just the passive per-prompt injection. Paste the kit rule from
+   [`agent-kit/templates/CLAUDE.md.tmpl`](agent-kit/templates/CLAUDE.md.tmpl), or at minimum this one
+   line: **actively call the `memory_recall` (or `search`) tool FIRST for anything the project should
+   already know — never answer from working memory without recalling.**
+
+The hook (passive, prompt-scoped injection) and the active-recall rule (the agent's own lookups) are
+**complementary — ship both, don't pick one.**
 
 Full details (the `Stop` capture hook, global install, per-project scopes) live in
 [`hooks/README.md`](hooks/README.md).
@@ -309,7 +317,10 @@ Environment tunables:
 ## Why UltraMemory
 
 - **Deterministic recall-first.** "Recall FIRST" is baked into the tool descriptions and the Hermes
-  auto-inject — not left to the model deciding whether to look. Recall-first, guaranteed.
+  auto-inject — not left to the model deciding whether to look. The hook makes a deterministic
+  injection *attempt* before every prompt (fail-open, top matches); paired with the active-recall
+  `CLAUDE.md` rule for the agent's own mid-reasoning lookups, that trio is the real recall-first
+  guarantee.
 - **Honest about what it doesn't know.** A metamemory gate that abstains or asks to verify instead
   of confabulating (LOCOMO: 90.2% correctly-abstained).
 
