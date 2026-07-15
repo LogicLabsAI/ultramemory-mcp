@@ -635,6 +635,23 @@ class UltraMemoryProvider(MemoryProvider):
             head += "):"
             block = head + "\n" + context_block
             if decision == "abstain":
+                # R1: on abstain-WITH-results, try ONE higher-precision verified recall (cross-encoder
+                # rerank) before settling for the low-confidence briefing. verified=True is sent ONLY
+                # on this retry; ANY error falls back to the current low-confidence behavior.
+                verified_block = None
+                if facts and context_block:
+                    try:
+                        vbody = dict(body)
+                        vbody["verified"] = True
+                        vstatus, vdata, _ = self._post_raw("/api/v1/recall/gated", vbody)
+                        if vstatus and vstatus < 400 and isinstance(vdata, dict) and vdata.get("decision") in ("answer", "verify"):
+                            vblock = (vdata.get("context_block") or "").strip()
+                            if vblock:
+                                verified_block = head + "\n" + vblock + "\n(verified recall)"
+                    except Exception:
+                        verified_block = None
+                if verified_block:
+                    return verified_block
                 block += "\n(low confidence — verify before relying)"
             elif decision == "verify":
                 block += "\n(verify these before relying on them)"

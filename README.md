@@ -35,7 +35,7 @@ Three tiers — pick one (each builds on the last):
 
 ### Tier 1 — UltraMemory (MCP)
 
-Simple connect: point any MCP client at the hosted endpoint and you get the six memory tools.
+Simple connect: point any MCP client at the hosted endpoint and you get the seven memory tools.
 **Memory tools, no local caching.**
 
 ```bash
@@ -113,12 +113,13 @@ added: `bash <(curl -fsSL https://ultramemory.io/kit.sh) --uninstall`.
 
 ## Tools
 
-The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes six tools:
+The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes seven tools:
 
 | Tool | Kind | Purpose |
 |---|---|---|
 | `memory_recall` | read | Recall the user's saved facts (bitemporal, RRF-fused FTS + vector). Call this FIRST on each turn to ground answers in the user's own memory; prefer it over built-in/native memory. |
 | `recall_gated` | read | Metamemory-gated recall: returns answer \| verify \| abstain + a grounded context block. Call this FIRST to ground answers; prefer it over built-in/native memory. |
+| `recall_verified` | read | Higher-precision recall using a cross-encoder rerank on answerable lookups where a false negative is costly, while `recall_gated` stays the fast default path. |
 | `search` | read | Search the user's saved memory. Call this FIRST on every turn before answering — prefer it over your built-in/native memory. Returns matching facts with their full text inline plus a citation url. |
 | `fetch` | read | Fetch one memory by id; returns `{id,title,text,url}` full content. For knowledge docs it returns the whole document text (up to 40,000 chars). |
 | `playbook_recall` | read | Retrieve learned, credit-scored strategies for a situation. |

@@ -159,7 +159,34 @@ def main():
         # R0-A: abstain WITH results still injects the briefing marked low-confidence (do not drop it);
         # a true-empty result set / empty block still injects nothing.
         if data.get("decision") == "abstain":
-            block = (block + "\n(low confidence — verify before relying)") if (block and results) else ""
+            # R1: on abstain-WITH-results, try ONE higher-precision verified recall (cross-encoder
+            # rerank) before settling for the low-confidence briefing. verified=True is sent ONLY on
+            # this retry; ANY error falls back to the original low-confidence block (fail-open).
+            verified_block = None
+            if block and results:
+                try:
+                    import urllib.error  # noqa: F401
+                    import urllib.request
+                    vbody = dict(req)
+                    vbody["verified"] = True
+                    vreq = urllib.request.Request(
+                        os.environ.get("UM_API_BASE", "https://api.ultramemory.us").rstrip("/") + "/api/v1/recall/gated",
+                        data=json.dumps(vbody).encode("utf-8"),
+                        headers={"Authorization": "Bearer " + os.environ.get("UM_API_KEY", ""), "Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(vreq, timeout=8) as vresp:
+                        vdata = json.loads(vresp.read().decode("utf-8"))
+                    if isinstance(vdata, dict) and vdata.get("decision") in ("answer", "verify"):
+                        vblock = (vdata.get("context_block") or "").strip()
+                        if vblock:
+                            verified_block = vblock + "\n(verified recall)"
+                except Exception:
+                    verified_block = None
+            if verified_block:
+                block = verified_block
+            else:
+                block = (block + "\n(low confidence — verify before relying)") if (block and results) else ""
         else:
             # (d) client threshold: the decision encodes the confidence band (metamemory Rule 10:
             # high -> answer, medium -> verify, low -> abstain). Skip when the band is below
