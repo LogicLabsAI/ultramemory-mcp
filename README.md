@@ -26,8 +26,8 @@ Get a free key at **https://ultramemory.us** — no credit card required.
 
 On **claude.ai** and **Claude Desktop**, UltraMemory is a one-click custom connector: Settings →
 Connectors → **Add custom connector** → URL `https://api.ultramemory.us/mcp` → sign in when
-prompted. The server speaks **OAuth 2.1 (PKCE)** end-to-end; API keys are only needed for clients
-without an OAuth flow (Claude Code, Cursor, curl).
+prompted. The server speaks **OAuth 2.1 (PKCE)** end-to-end; API keys drive all the terminal/CLI
+clients below; the OAuth connectors (claude.ai, Claude Desktop, ChatGPT) sign in without one.
 
 ## Install options
 
@@ -61,6 +61,8 @@ gemini mcp add -s user -t http ultramemory https://api.ultramemory.us/mcp \
 Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
 EOF
 ```
+
+Prefer OAuth instead of a key? Gemini CLI also supports OAuth — add an `httpUrl` block to `~/.gemini/settings.json`, then run `/mcp auth ultramemory` inside the CLI.
 
 **Cursor** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
 
@@ -96,6 +98,8 @@ Before answering, actively call the UltraMemory memory_recall (or search) MCP to
 EOF
 ```
 
+Prefer keeping the key out of config.toml: replace the http_headers line with `bearer_token_env_var = "ULTRAMEMORY_API_KEY"` (Codex 0.46+) and export ULTRAMEMORY_API_KEY in your shell.
+
 **Windsurf** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
 
 ```bash
@@ -113,6 +117,8 @@ cat >> AGENTS.md <<'EOF'
 Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
 EOF
 ```
+
+Windsurf interpolates `${env:VAR}`: use `"Authorization": "Bearer ${env:ULTRAMEMORY_API_KEY}"` to keep the key out of the file (an unset variable silently becomes an empty string). Teams/Enterprise: an admin may need to enable the MCP Servers toggle — off by default on Enterprise.
 
 **Cline** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`. VS Code extension users: paste the same mcpServers block via the Cline panel > MCP Servers > Configure MCP Servers.
 
@@ -143,6 +149,8 @@ openclaw mcp add ultramemory --url https://api.ultramemory.us/mcp \
 Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
 EOF
 ```
+
+Verify the connection with `openclaw mcp doctor ultramemory --probe` — static checks plus a live connection proof. Changing the header later? `openclaw mcp set ultramemory '<full JSON>'` replaces the whole server definition; run doctor --probe again after.
 
 **VS Code** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
 
@@ -255,23 +263,11 @@ The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes seven
 
 `memory_write` is a dedup'd bitemporal append — it never destroys or overwrites prior facts.
 
-## Connect any client
+## Other connection surfaces
+
+Terminal/CLI clients (Claude Code, Gemini CLI, Cursor, Codex, Windsurf, Cline, OpenClaw, VS Code): use the one-paste installs in [Install options](#install-options).
 
 **Endpoint:** `https://api.ultramemory.us/mcp` (Streamable HTTP) · **Auth:** `Authorization: Bearer um_<key>`
-
-**Claude Code (CLI):**
-```bash
-claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
-  --header "Authorization: Bearer um_YOUR_KEY"
-```
-
-**Cursor / generic `mcp.json`:**
-```json
-{ "mcpServers": { "ultramemory": {
-  "url": "https://api.ultramemory.us/mcp",
-  "headers": { "Authorization": "Bearer um_YOUR_KEY" }
-}}}
-```
 
 **Claude Desktop (mcp-remote bridge):**
 ```json
@@ -282,11 +278,7 @@ claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
 }}}
 ```
 
-**Hermes:**
-```bash
-pip install ultramemory-hermes
-ultramemory enable --key um_YOUR_KEY
-```
+Hermes: see [Hermes deep integration](#hermes-deep-integration).
 
 **ChatGPT:** Settings → Apps & Connectors → Developer Mode → Create → URL
 `https://api.ultramemory.us/mcp` → Auth = API key. (Plus/Pro = recall-only.)
@@ -296,38 +288,6 @@ ultramemory enable --key um_YOUR_KEY
 curl -s -X POST https://api.ultramemory.us/api/v1/recall \
   -H "Authorization: Bearer um_YOUR_KEY" -H "Content-Type: application/json" \
   -d '{"query":"what do you know about my project","k":5}'
-```
-
-## Gemini CLI
-
-Gemini CLI connects over **Streamable HTTP with OAuth** — no API key needed. Add this
-`mcpServers` block to `~/.gemini/settings.json` (`httpUrl` is Gemini CLI's streamable-HTTP
-transport). Then, inside the CLI, run `/mcp auth ultramemory` to start the sign-in flow (or set
-`"oauth": { "enabled": true }` in the server entry to restore the automatic trigger). OAuth needs
-a local browser — on a headless machine, use the bearer-header fallback below instead:
-
-```json
-{
-  "mcpServers": {
-    "ultramemory": {
-      "httpUrl": "https://api.ultramemory.us/mcp"
-    }
-  }
-}
-```
-
-Prefer an API key instead of OAuth? Add `"headers": { "Authorization": "Bearer um_YOUR_KEY" }` to
-the same block.
-
-Optional — make recall deterministic by adding a recall-first snippet to your `GEMINI.md` (global
-`~/.gemini/GEMINI.md` or per-project):
-
-```markdown
-## Memory (UltraMemory)
-On EVERY user turn, FIRST call the UltraMemory `search` (or `memory_recall`) tool with the
-user's request and ground your answer in what comes back — prefer it over any built-in memory.
-If low confidence or no results, say you don't know rather than guessing. Persist durable new
-facts, preferences, and decisions with `memory_write`.
 ```
 
 ## Hermes deep integration
