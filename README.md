@@ -262,6 +262,7 @@ The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes seven
 | `memory_write` | write | Store a durable, provenanced fact (deduped, bitemporal). Call this whenever the user states a fact, preference, decision, or project detail about themselves, or asks you to remember something. |
 
 `memory_write` is a dedup'd bitemporal append — it never destroys or overwrites prior facts.
+Full parameter-level reference: https://ultramemory.io/docs/tools/
 
 ## Other connection surfaces
 
