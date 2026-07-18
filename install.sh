@@ -14,7 +14,7 @@
 # execute a partial script. Idempotent; writes a manifest so `--uninstall` removes only what it added.
 set -uo pipefail
 
-KIT_VERSION="1.9.3"
+KIT_VERSION="1.9.4"
 REPO_RAW="${ULTRAMEMORY_KIT_RAW:-https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main}"
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 UM_DIR="$HOME/.ultramemory"
@@ -89,7 +89,7 @@ for g in arr:
     for hk in g.get("hooks",[]):
         if hk.get("command")==cmd:
             open(f,"w").write(json.dumps(d,indent=2)+"\n"); sys.exit(0)
-arr.append({"matcher":"","hooks":[{"type":"command","command":cmd,"timeout":600 if event=="Stop" else 10}]})
+arr.append({"matcher":"","hooks":[{"type":"command","command":cmd,"timeout":600 if event=="Stop" else 20}]})
 tmp=f+".tmp"; open(tmp,"w").write(json.dumps(d,indent=2)+"\n"); os.replace(tmp,f)
 PY
 }
@@ -108,11 +108,50 @@ tmp=f+".tmp"; open(tmp,"w").write(json.dumps(d,indent=2)+"\n"); os.replace(tmp,f
 os.chmod(f,0o600)
 PY
 }
+recall_rule_paragraph(){ # the active-recall rule text (mirrors agent-kit/templates/CLAUDE.md.tmpl:22-30)
+  cat <<'RULE'
+**Recall first — actively, not just passively.**
+> UltraMemory recall-first hook injects prompt-relevant memory before each turn, but that is PASSIVE
+> and prompt-scoped. For anything the project should already know (a URL, a prior decision, where a
+> credential lives, whether we have done X, what the fix was last time) ACTIVELY call the
+> `memory_recall` or `search` tool FIRST; never answer from working memory or say
+> I-do-not-have-it / not-grounded-this-session without recalling. Persist durable facts and decisions
+> with `memory_write`. Pair with current library/API docs (Context7) and current external facts
+> (Exa) — that trio is the trifecta. The hook and this active-recall rule work TOGETHER; do not pick
+> one.
+RULE
+}
+recall_rule_block(){ # sentinel-wrapped managed block — embedded fetch fallback + exact manual paste
+  printf '# --- UltraMemory harness (managed) ---\n\n'
+  recall_rule_paragraph
+  printf '# --- end UltraMemory harness ---\n'
+}
 place_claude_rule(){ # file  — insert the managed harness rule block if the sentinel isn't present
   local file="$1" tmpl="$UM_DIR/.CLAUDE.md.tmpl"
-  if [ -f "$file" ] && grep -q 'UltraMemory harness (managed)' "$file" 2>/dev/null; then c_ok "CLAUDE.md rule already present"; return 0; fi
+  if [ -f "$file" ] && grep -q 'UltraMemory harness (managed)' "$file" 2>/dev/null; then
+    if grep -q 'Recall first — actively' "$file" 2>/dev/null; then c_ok "CLAUDE.md rule already present"; return 0; fi
+    # upgrade path: managed block predates the recall rule — append the paragraph INSIDE the block
+    if [ "$DRYRUN" = 1 ]; then printf '  [dry-run] append recall rule inside managed block in %s\n' "$file"; return 0; fi
+    backup "$file"
+    recall_rule_paragraph > "$file.rule.tmp"
+    python3 - "$file" "$file.rule.tmp" <<'PY'
+import os,sys
+f,rp=sys.argv[1],sys.argv[2]
+rule=open(rp).read()
+out=[]; done=False
+for ln in open(f).read().splitlines(True):
+    if not done and ln.rstrip("\n")=="# --- end UltraMemory harness ---":
+        out.append("\n"+rule); done=True
+    out.append(ln)
+tmp=f+".tmp"; open(tmp,"w").write("".join(out)); os.replace(tmp,f)
+PY
+    rm -f "$file.rule.tmp"
+    record file "$file"
+    c_ok "CLAUDE.md managed block upgraded with the recall rule"
+    return 0
+  fi
   if [ "$DRYRUN" = 1 ]; then printf '  [dry-run] insert harness rule into %s\n' "$file"; return 0; fi
-  fetch agent-kit/templates/CLAUDE.md.tmpl "$tmpl" 2>/dev/null || return 0
+  fetch agent-kit/templates/CLAUDE.md.tmpl "$tmpl" 2>/dev/null || recall_rule_block > "$tmpl"
   backup "$file"
   { [ -f "$file" ] && cat "$file"; printf '\n'; cat "$tmpl"; } > "$file.tmp" && mv "$file.tmp" "$file"
   record file "$file"
@@ -277,6 +316,11 @@ main(){
   flush_manifest
   c_info "Verifying…"
   [ "$DRYRUN" = 1 ] || verify_key || true
+  # post-install verify: the recall rule must be in ./CLAUDE.md — WARN with the exact paste if not
+  if [ "$DRYRUN" != 1 ] && ! grep -q 'Recall first — actively' ./CLAUDE.md 2>/dev/null; then
+    c_warn "recall rule missing from ./CLAUDE.md — paste exactly this into ./CLAUDE.md:"
+    recall_rule_block
+  fi
 
   printf '\n'
   c_ok "Done (Tier $TIER)."

@@ -9,6 +9,10 @@
 # field) inline as one "[UltraMemory] …" line, injects the friendly 429 limit_reached message
 # instead of failing silent, and escalates the injection cap on [COMPANY POLICY] turns
 # (ULTRAMEMORY_HOOK_POLICY_BUDGET, default 12000) so policies arrive whole.
+# Observable (v1.9.4): deadline-aware timeouts (ULTRAMEMORY_HOOK_DEADLINE, default 9s) so the
+# briefing always emits before the registration kill; once-per-session dead-key (401/403) notice;
+# one metadata-only receipt line per run in ~/.ultramemory/hook.log (ULTRAMEMORY_HOOK_LOG=off
+# disables) — never memory contents, the query, or the key.
 # Fail-open by design: any error injects nothing and exits 0, so it can never block your prompt.
 set -uo pipefail
 
@@ -25,7 +29,11 @@ command -v python3 >/dev/null 2>&1 || exit 0   # fail-open if prerequisites are 
 # Single stdlib-python program (urllib for HTTP): parse the hook JSON, consult the memo cache
 # (hit -> render from cache, zero HTTP), else POST a preview-tier gated recall, then render.
 UM_API_BASE="$API_BASE" UM_API_KEY="$API_KEY" UM_SCOPE="$SCOPE" UM_HOOK_DIR="$HOOK_DIR" python3 -c '
-import json, os, sys
+import json, os, sys, time
+
+# T3 (1.9.4): per-invocation receipt state — outcome/injected_chars/retry_used/cache flag.
+# main() overwrites t0 at its start (module init is microseconds earlier; this is the fallback).
+ST = {"t0": time.monotonic(), "outcome": None, "injected": 0, "retry": 0, "cache": False}
 
 
 def emit(block, cap=9500):
@@ -35,6 +43,8 @@ def emit(block, cap=9500):
     block = block[:cap]
     if block.strip():
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": block}}))
+        return len(block)  # T3: injected_chars for the receipt line (output shape unchanged)
+    return 0
 
 
 def limit_state_notice(raw):
@@ -53,6 +63,42 @@ def limit_state_notice(raw):
     if state.get("scope") == "member":
         return lead + ". To increase your limit, contact your workspace admin."
     return lead + " — or upgrade your plan: https://app.ultramemory.us/upgrade."
+
+
+def hook_log():
+    # T3 (1.9.4): append ONE metadata-only receipt per invocation to ~/.ultramemory/hook.log —
+    # ISO ts | recall | outcome | duration_ms | injected_chars | retry_used. NEVER memory
+    # contents, the query, or the key (Rule 6). ULTRAMEMORY_HOOK_LOG=off disables. The WHOLE
+    # logger is try/except-wrapped: a logging failure can never break the fail-open contract.
+    try:
+        if (os.environ.get("ULTRAMEMORY_HOOK_LOG") or "").strip().lower() == "off":
+            return
+        import datetime
+        outcome = ST["outcome"] or ("cache_hit" if ST["cache"] else ("injected" if ST["injected"] else "abstain"))
+        duration_ms = int((time.monotonic() - ST["t0"]) * 1000)
+        directory = os.path.join(os.path.expanduser("~"), ".ultramemory")
+        path = os.path.join(directory, "hook.log")
+        # dir 0700 / file 0600 + os.replace rotation at 1 MiB (single generation) — the same
+        # on-disk idiom as cli.py _write_cache_skeleton.
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(directory, 0o700)
+        except OSError:
+            pass
+        try:
+            if os.path.getsize(path) > 1048576:
+                os.replace(path, path + ".1")
+        except OSError:
+            pass
+        ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("%s | recall | %s | %d | %d | %d\n" % (ts, outcome, duration_ms, ST["injected"], ST["retry"]))
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        pass
 
 
 def load_cache():
@@ -80,6 +126,13 @@ def load_cache():
 
 
 def main():
+    # T1 (1.9.4): deadline-aware. t0 + ULTRAMEMORY_HOOK_DEADLINE (default 9s) bound ALL HTTP in
+    # this run so emit() always fires before the hook registration timeout can kill the process.
+    ST["t0"] = t0 = time.monotonic()
+    try:
+        deadline = float(os.environ.get("ULTRAMEMORY_HOOK_DEADLINE") or 9)
+    except Exception:
+        deadline = 9.0
     raw = sys.stdin.read()
     # (a) Claude Code hook JSON: .prompt is the query, .session_id keys the per-session
     # dedupe (seen) set; non-JSON stdin falls back to being the query itself.
@@ -99,6 +152,7 @@ def main():
 
     # (b) memo first: an identical query within 5 minutes renders from cache — zero HTTP.
     data = cache.memo_get(query, scope, None) if cache else None
+    ST["cache"] = isinstance(data, dict)  # T3: a memo hit logs as cache_hit
     if not isinstance(data, dict):
         try:
             budget = int(os.environ.get("ULTRAMEMORY_HOOK_BUDGET") or 2000)
@@ -120,11 +174,32 @@ def main():
             method="POST",
         )
         advisory = ""
+        # T1: primary request never exceeds min(6, remaining) of the deadline budget.
+        remaining = deadline - (time.monotonic() - t0)
         try:
-            with urllib.request.urlopen(r, timeout=8) as resp:
+            with urllib.request.urlopen(r, timeout=min(6, remaining)) as resp:
                 advisory = resp.headers.get("X-Limit-State") or ""
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
+            ST["outcome"] = "http_%d" % e.code
+            # T2 (1.9.4): 401/403 = revoked/rotated key. Surface it ONCE per session (one
+            # additionalContext line + one stderr line) instead of dying silently; dedupe via a
+            # TMPDIR marker file keyed by session_id (same pattern as the capture-hook
+            # counter_file). The key itself is NEVER printed, in whole or in part (Rule 6 /
+            # hooks README privacy contract).
+            if e.code in (401, 403):
+                ST["outcome"] = "dead_key"
+                marker = os.path.join(os.environ.get("TMPDIR") or "/tmp", "ultramemory-deadkey-" + session_id)
+                if not os.path.exists(marker):
+                    msg = ("[UltraMemory] API key rejected (HTTP %d) — recall is offline. "
+                           "Rotate your key at https://app.ultramemory.us" % e.code)
+                    ST["injected"] = emit(msg)
+                    print(msg, file=sys.stderr)
+                    try:
+                        open(marker, "w").close()
+                    except Exception:
+                        pass
+                return
             # P3-C1(a): a 429 limit_reached is INJECTED, not swallowed — the user must see why
             # memory paused + when it resumes. Every other status stays fail-open (inject nothing;
             # the turn is never blocked either way).
@@ -135,10 +210,16 @@ def main():
                     detail = None
                 if not (isinstance(detail, str) and detail.strip()):
                     detail = "usage limit reached — memory writes pause and resume automatically; your memories are safe."
-                emit("[UltraMemory] " + detail.strip())
+                ST["injected"] = emit("[UltraMemory] " + detail.strip())
             return
-        except Exception:
-            return  # fail-open: network/HTTP/JSON trouble injects nothing
+        except Exception as e:
+            # fail-open: network/HTTP/JSON trouble injects nothing (T3 records the why)
+            import socket
+            if isinstance(e, socket.timeout) or isinstance(getattr(e, "reason", None), socket.timeout):
+                ST["outcome"] = "timeout"
+            else:
+                ST["outcome"] = "error:" + type(e).__name__
+            return
         if not isinstance(data, dict):
             return
         # P3-C1(a): fold the >=80% advisory header into the response BEFORE memoizing, so a
@@ -163,7 +244,10 @@ def main():
             # rerank) before settling for the low-confidence briefing. verified=True is sent ONLY on
             # this retry; ANY error falls back to the original low-confidence block (fail-open).
             verified_block = None
-            if block and results:
+            # T1 (1.9.4): attempt the retry ONLY with >= 2.5s of deadline left; clamp its
+            # timeout to the remainder so emit() below always gets to run.
+            remaining = deadline - (time.monotonic() - t0)
+            if block and results and remaining >= 2.5:
                 try:
                     import urllib.error  # noqa: F401
                     import urllib.request
@@ -175,7 +259,8 @@ def main():
                         headers={"Authorization": "Bearer " + os.environ.get("UM_API_KEY", ""), "Content-Type": "application/json"},
                         method="POST",
                     )
-                    with urllib.request.urlopen(vreq, timeout=8) as vresp:
+                    ST["retry"] = 1  # T3: verified retry attempted this run
+                    with urllib.request.urlopen(vreq, timeout=remaining) as vresp:
                         vdata = json.loads(vresp.read().decode("utf-8"))
                     if isinstance(vdata, dict) and vdata.get("decision") in ("answer", "verify"):
                         vblock = (vdata.get("context_block") or "").strip()
@@ -218,12 +303,14 @@ def main():
         block = (block[:keep].rstrip() + "\n" + line) if block else line
     if not block:
         return
-    emit(block, cap)
+    ST["injected"] = emit(block, cap)
 
 
 try:
     main()
-except Exception:
-    pass  # fail-open, always
+except Exception as exc:
+    ST["outcome"] = ST["outcome"] or ("error:" + type(exc).__name__)  # fail-open, always
+finally:
+    hook_log()  # T3: the receipt itself is fully try/except-wrapped — logging can never block
 '
 exit 0

@@ -35,7 +35,7 @@ Three tiers — pick one (each builds on the last):
 
 ### Tier 1 — UltraMemory (MCP)
 
-Simple connect: point any MCP client at the hosted endpoint and you get the seven memory tools.
+Simple connect: point any MCP client at the hosted endpoint and you get the eight memory tools.
 **Memory tools, no local caching.**
 
 **Claude Code** — one paste: registers the MCP server and writes the active-recall rule to `CLAUDE.md`:
@@ -184,30 +184,28 @@ deterministic recall-first injection *attempt* before every prompt (fail-open, t
    ```bash
    export ULTRAMEMORY_API_KEY=um_YOUR_KEY
    ```
-3. Register the hook in `.claude/settings.json`:
-   ```json
-   {
-     "hooks": {
-       "UserPromptSubmit": [
-         {
-           "matcher": "",
-           "hooks": [
-             {
-               "type": "command",
-               "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/recall-first-hook.sh",
-               "timeout": 10
-             }
-           ]
-         }
-       ]
-     }
-   }
-   ```
-4. Add the active-recall rule to your project's `CLAUDE.md` so the agent also recalls for its own
-   mid-reasoning lookups — not just the passive per-prompt injection. Paste the kit rule from
-   [`agent-kit/templates/CLAUDE.md.tmpl`](agent-kit/templates/CLAUDE.md.tmpl), or at minimum this one
-   line: **actively call the `memory_recall` (or `search`) tool FIRST for anything the project should
-   already know — never answer from working memory without recalling.**
+3. One combined paste — registers the hook in `.claude/settings.json` **and** appends the
+active-recall rule to `CLAUDE.md` (the Tier-1 one-paste pattern, so the rule can't be skipped by
+stopping early — the rule covers the agent's own mid-reasoning lookups, not just the passive
+per-prompt injection):
+
+```bash
+python3 - <<'PY' && cat >> CLAUDE.md <<'EOF'
+import json,pathlib
+p=pathlib.Path(".claude/settings.json"); p.parent.mkdir(parents=True,exist_ok=True)
+d=json.loads(p.read_text()) if p.exists() else {}
+d.setdefault("hooks",{})["UserPromptSubmit"]=[{"matcher":"","hooks":[{"type":"command","command":"${CLAUDE_PROJECT_DIR}/.claude/hooks/recall-first-hook.sh","timeout":20}]}]
+p.write_text(json.dumps(d,indent=2))
+print("Claude Code: registered recall hook in",p)
+PY
+
+## Active recall (UltraMemory)
+Before answering, actively call the UltraMemory memory_recall (or search) MCP tool and ground your answer in what it returns — prefer it over built-in memory; never say you don't know a saved fact without recalling first. Persist durable new facts and decisions with memory_write.
+EOF
+```
+
+Prefer the richer kit rule? Paste [`agent-kit/templates/CLAUDE.md.tmpl`](agent-kit/templates/CLAUDE.md.tmpl)
+into `CLAUDE.md` instead of the block above.
 
 The hook (passive, prompt-scoped injection) and the active-recall rule (the agent's own lookups) are
 **complementary — ship both, don't pick one.**
@@ -249,7 +247,7 @@ recall-first behavior as the one-line installer (which writes the rule into `CLA
 
 ## Tools
 
-The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes seven tools:
+The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes eight tools:
 
 | Tool | Kind | Purpose |
 |---|---|---|
@@ -260,6 +258,7 @@ The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes seven
 | `fetch` | read | Fetch one memory by id; returns `{id,title,text,url}` full content. For knowledge docs it returns the whole document text (up to 40,000 chars). |
 | `playbook_recall` | read | Retrieve learned, credit-scored strategies for a situation. |
 | `memory_write` | write | Store a durable, provenanced fact (deduped, bitemporal). Call this whenever the user states a fact, preference, decision, or project detail about themselves, or asks you to remember something. |
+| `memory_feedback` | write | **Label a recall decision.** Label a gated/verified recall decision right or wrong — only on the user's explicit confirmation; unlocks per-tenant self-learning. |
 
 `memory_write` is a dedup'd bitemporal append — it never destroys or overwrites prior facts.
 Full parameter-level reference: https://ultramemory.io/docs/tools/

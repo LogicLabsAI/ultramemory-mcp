@@ -298,6 +298,198 @@ def _cmd_kit(args: argparse.Namespace) -> int:
     return subprocess.call(["bash", path, *(["--check"] if action == "check" else [])])
 
 
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Diagnose the Tier-2 recall-first install: 7 static checks, plus a live API round-trip
+    with ``--probe``. One line per check (ok / WARN / FAIL prefix); exits non-zero if ANY check
+    FAILs (WARN alone stays 0) so it's CI-able. Never prints the key value — presence only.
+    """
+    import shutil
+    import time
+    from datetime import datetime, timedelta, timezone
+
+    failed = False
+
+    def line(status: str, label: str, msg: str) -> None:
+        nonlocal failed
+        if status == "FAIL":
+            failed = True
+        print(f"{status:<4} {label:<12} {msg}")
+
+    def _read_json(path: str) -> dict:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    settings_json = os.path.join(".claude", "settings.json")
+    settings_local = os.path.join(".claude", "settings.local.json")
+
+    # 1) API key — install.sh contract: ./.claude/settings.local.json env, else the environment.
+    env_block = _read_json(settings_local).get("env")
+    key = ((env_block or {}).get("ULTRAMEMORY_API_KEY") or "").strip()
+    key_src = f"{settings_local} env" if key else None
+    if not key:
+        key = (os.environ.get("ULTRAMEMORY_API_KEY") or "").strip()
+        key_src = "process environment" if key else None
+    if key:
+        line("ok", "api key", f"present via {key_src} (value masked)")
+    else:
+        line(
+            "FAIL",
+            "api key",
+            f"ULTRAMEMORY_API_KEY not set in {settings_local} (env) or the environment",
+        )
+
+    # find the UserPromptSubmit registration first — it names the installed hook path.
+    reg_file: Optional[str] = None
+    reg_cmd: Optional[str] = None
+    reg_timeout = None
+    for sf in (settings_json, settings_local):
+        if reg_cmd:
+            break
+        groups = (_read_json(sf).get("hooks") or {}).get("UserPromptSubmit") or []
+        for group in groups if isinstance(groups, list) else []:
+            if not isinstance(group, dict):
+                continue
+            for hk in group.get("hooks") or []:
+                if isinstance(hk, dict) and "recall-first-hook.sh" in str(hk.get("command", "")):
+                    reg_file, reg_cmd, reg_timeout = sf, str(hk.get("command")), hk.get("timeout")
+                    break
+            if reg_cmd:
+                break
+
+    # 2) hook file exists + executable — resolve the path the way install.sh places/registers it
+    #    (./.claude/hooks/recall-first-hook.sh, registered via ${CLAUDE_PROJECT_DIR}).
+    hook_path = os.path.join(".claude", "hooks", "recall-first-hook.sh")
+    if reg_cmd:
+        proj = os.environ.get("CLAUDE_PROJECT_DIR") or "."
+        cand = reg_cmd.replace("${CLAUDE_PROJECT_DIR}", proj).replace("$CLAUDE_PROJECT_DIR", proj)
+        if os.path.isfile(cand):
+            hook_path = cand
+    if not os.path.isfile(hook_path):
+        line("FAIL", "hook file", f"missing: {hook_path}")
+    elif not os.access(hook_path, os.X_OK):
+        line("FAIL", "hook file", f"{hook_path} exists but is not executable (chmod +x it)")
+    else:
+        line("ok", "hook file", f"{hook_path} (executable)")
+
+    # 3) settings registration + configured timeout (WARN below the 1.9.4 floor of 20).
+    if reg_cmd:
+        if reg_timeout is None:
+            line("ok", "registration", f"UserPromptSubmit in {reg_file} (no timeout set — Claude Code default applies)")
+        elif isinstance(reg_timeout, (int, float)) and reg_timeout < 20:
+            line("WARN", "registration", f"UserPromptSubmit in {reg_file}, timeout {reg_timeout} < 20 — raise it to 20")
+        else:
+            line("ok", "registration", f"UserPromptSubmit in {reg_file}, timeout {reg_timeout}")
+    else:
+        line(
+            "FAIL",
+            "registration",
+            f"no UserPromptSubmit entry for recall-first-hook.sh in {settings_json} or {settings_local}",
+        )
+
+    # 4) cache.py adjacent to the hook (the hook also accepts the parent dir; without either,
+    #    caching quietly disables — degraded, not broken).
+    hook_dir = os.path.dirname(hook_path) or "."
+    adjacent = os.path.join(hook_dir, "cache.py")
+    parent = os.path.join(hook_dir, os.pardir, "cache.py")
+    if os.path.isfile(adjacent):
+        line("ok", "cache.py", adjacent)
+    elif os.path.isfile(parent):
+        line("ok", "cache.py", f"{parent} (parent dir — repo-checkout layout)")
+    else:
+        line("WARN", "cache.py", f"missing next to the hook ({adjacent}) — token-economics caching is disabled")
+
+    # 5) CLAUDE.md recall-rule sentinel (active-recall half of the trifecta).
+    sentinel = "Recall first — actively"
+    has_rule = False
+    try:
+        with open("CLAUDE.md", "r", encoding="utf-8") as f:
+            has_rule = sentinel in f.read()
+    except OSError:
+        has_rule = False
+    if has_rule:
+        line("ok", "CLAUDE.md", f'recall rule present ("{sentinel}")')
+    else:
+        line("WARN", "CLAUDE.md", f'recall-rule sentinel "{sentinel}" not in ./CLAUDE.md — hook is passive-only (re-run the installer)')
+
+    # 6) python3 on PATH (the hook and cache.py both need it).
+    py3 = shutil.which("python3")
+    if py3:
+        line("ok", "python3", py3)
+    else:
+        line("FAIL", "python3", "not on PATH — the recall hook cannot run")
+
+    # 7) hook.log tail — dead_key / timeout outcome counts over the last 24h.
+    log_path = os.path.join(os.path.expanduser("~"), ".ultramemory", "hook.log")
+    if not os.path.exists(log_path):
+        line("ok", "hook.log", f"no log yet at {log_path} (hook not run yet, or ULTRAMEMORY_HOOK_LOG=off)")
+    else:
+        dead = timed_out = total = 0
+        cutoff_aware = datetime.now(timezone.utc) - timedelta(hours=24)
+        cutoff_naive = datetime.now() - timedelta(hours=24)
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+                for raw in f:
+                    parts = [p.strip() for p in raw.split("|")]
+                    if len(parts) < 3:
+                        continue
+                    try:
+                        ts = datetime.fromisoformat(parts[0].replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                    if ts < (cutoff_aware if ts.tzinfo else cutoff_naive):
+                        continue
+                    total += 1
+                    if parts[2] == "dead_key":
+                        dead += 1
+                    elif parts[2] == "timeout":
+                        timed_out += 1
+            status = "WARN" if (dead or timed_out) else "ok"
+            line(status, "hook.log", f"last 24h: dead_key={dead} timeout={timed_out} ({total} runs)")
+        except OSError:
+            line("WARN", "hook.log", f"unreadable: {log_path}")
+
+    # --probe: live POST, same request shape as install.sh verify_key (timeout 20).
+    if args.probe:
+        import urllib.error
+        import urllib.request
+
+        base = (os.environ.get("ULTRAMEMORY_API_BASE") or DEFAULT_BASE_URL).rstrip("/")
+        url = base + "/api/v1/recall/gated"
+        if not key:
+            line("FAIL", "probe", f"skipped — no API key to send to {url}")
+        else:
+            body = json.dumps({"query": "installer smoke test", "k": 1, "mode": "preview"}).encode("utf-8")
+            req = urllib.request.Request(
+                url,
+                data=body,
+                headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+                method="POST",
+            )
+            t0 = time.monotonic()
+            try:
+                with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
+                    code = resp.status
+            except urllib.error.HTTPError as e:
+                code = e.code
+            except Exception:
+                code = 0
+            ms = int((time.monotonic() - t0) * 1000)
+            if code == 200:
+                line("ok", "probe", f"{url} -> 200 OK ({ms} ms)")
+            elif code == 401:
+                line("FAIL", "probe", f"{url} -> 401 dead key ({ms} ms) — rotate it at https://app.ultramemory.us")
+            elif code == 0:
+                line("FAIL", "probe", f"{url} -> offline (connection failed after {ms} ms)")
+            else:
+                line("FAIL", "probe", f"{url} -> HTTP {code} ({ms} ms)")
+
+    return 1 if failed else 0
+
+
 def _add_bool_flag(p: argparse.ArgumentParser, name: str, help_text: str) -> None:
     """Add a paired --flag/--no-flag that defaults to None (= 'leave as configured')."""
     dest = name.replace("-", "_")
@@ -348,6 +540,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="extra args passed through to the installer (e.g. --tier 3 --dry-run)",
     )
     kit.set_defaults(func=_cmd_kit)
+
+    doctor = sub.add_parser(
+        "doctor",
+        help="diagnose the recall-first install (7 static checks; --probe adds a live API round-trip)",
+    )
+    doctor.add_argument(
+        "--probe",
+        action="store_true",
+        help="also POST a 1-fact gated recall to the live API (reports 200 / 401 dead key / offline + RTT ms)",
+    )
+    doctor.set_defaults(func=_cmd_doctor)
 
     return parser
 

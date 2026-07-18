@@ -47,7 +47,7 @@ injection at 9,500 characters — see [Token economics](#token-economics-preview
              {
                "type": "command",
                "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/recall-first-hook.sh",
-               "timeout": 10
+               "timeout": 20
              }
            ]
          }
@@ -99,6 +99,8 @@ anti-confabulation guarantees:
 | `ULTRAMEMORY_HOOK_POLICY_BUDGET` | `12000` | injection cap for turns whose briefing contains a `[COMPANY POLICY]` block — replaces the default 9,500-char cap on those turns so whole policies arrive untruncated |
 | `ULTRAMEMORY_MIN_CONFIDENCE` | `low` | `low` \| `medium` \| `high` — minimum gate band to inject; `low` (default) injects medium/high (verify/answer), `high` injects only answer-grade recalls. `[COMPANY POLICY]` briefings bypass this |
 | `ULTRAMEMORY_CACHE` | *(unset)* | set to `off` to disable memoization + dedupe entirely (every call hits the API, no cache file is touched) |
+| `ULTRAMEMORY_HOOK_DEADLINE` | `9` | overall wall-clock deadline for the recall hook, in seconds — the primary request timeout is clamped to `min(6, remaining)` and the verified retry runs only when enough deadline remains, so the hook always emits before the registration timeout can kill it |
+| `ULTRAMEMORY_HOOK_LOG` | *(on)* | set to `off` to disable the per-invocation status line both hooks append to `~/.ultramemory/hook.log` — **metadata only** (timestamp, hook, outcome, duration, injected chars, retry flag); never memory contents, queries, or keys |
 
 ## Capture hook — automatic memory writing on every turn
 
@@ -139,7 +141,7 @@ It reuses the same environment variables as the recall hook — `ULTRAMEMORY_API
              {
                "type": "command",
                "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/capture-hook.sh",
-               "timeout": 10
+               "timeout": 30
              }
            ]
          }
@@ -247,6 +249,21 @@ prompt-submit budget while still returning the whole grounded briefing.
 
 ## Changelog
 
+- **1.9.4** — Hook observability: the silent-death class is eliminated. **Deadline-aware
+  timeouts:** the recall hook is governed by `ULTRAMEMORY_HOOK_DEADLINE` (default 9s) — the primary
+  request is clamped to `min(6, remaining)`, the verified retry runs only when enough deadline
+  remains, and the hook always emits before the registration timeout can kill it; registration
+  timeouts raised to **20** (recall `UserPromptSubmit`) and **30** (capture `Stop`). **Dead-key
+  notice:** a 401/403 now surfaces one once-per-session `[UltraMemory] API key rejected …` line
+  with the rotation URL instead of dying silently (the key is never echoed). **hook.log receipts:**
+  both hooks append one metadata-only line per invocation to `~/.ultramemory/hook.log`
+  (`ULTRAMEMORY_HOOK_LOG=off` disables; never contents, queries, or keys; 1 MiB rotation).
+  **Installer rule guard:** `install.sh` writes the active-recall rule from an embedded fallback on
+  template-fetch failure, upgrades older managed blocks missing the recall paragraph, and warns
+  with the exact manual paste if the sentinel is absent post-install. **Doctor command:** new
+  `ultramemory doctor [--probe]` checks key, hook file, registration + timeout, cache module,
+  CLAUDE.md rule sentinel, and hook.log health (`--probe` adds a live recall round-trip). **Docs:**
+  `memory_feedback` added to the README tool table (eight tools).
 - **1.8.0** — Limit visibility (usage-limits program U9/C7) + policy budget. **Recall hook:** when
   any enforced usage limit is ≥80% it appends the live notice as one `[UltraMemory] …` line to the
   injected context (rendered from the `X-Limit-State` header / `limit_notice` field, memo-cache

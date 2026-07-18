@@ -3,7 +3,7 @@
   "hooks": {
     "UserPromptSubmit": [
       { "matcher": "", "hooks": [
-        { "type": "command", "command": "$HOME/.claude/hooks/recall-first-hook.sh", "timeout": 10 },
+        { "type": "command", "command": "$HOME/.claude/hooks/recall-first-hook.sh", "timeout": 20 },
         { "type": "command", "command": "$HOME/.claude/hooks/harness-reminder.sh", "timeout": 5 }
       ] }
     ],
