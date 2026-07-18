@@ -12,6 +12,8 @@
 # Fail-open by design: any error captures nothing and exits 0, so it can never block Claude Code.
 set -uo pipefail
 
+[ "${ULTRAMEMORY_CAPTURE:-on}" = "off" ] && exit 0   # kit kill-switch (documented in usage-guide)
+
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 API_KEY="${ULTRAMEMORY_API_KEY:-}"
 
@@ -175,8 +177,12 @@ PY
 # never blocking). On a 429 the friendly server detail is emitted via the hook JSON-output
 # `systemMessage` field (shown to the user, non-blocking — never exit 2 / decision:block) and the
 # Nth-turn snapshot nudge below is skipped (its memory_write would hit the same paused-writes limit).
+# E3 (1.9.6): sanitize the deadline — a non-numeric ULTRAMEMORY_HOOK_DEADLINE would make curl
+# reject --max-time and every capture would silently fail; fall back to the 9 s default.
+um_deadline="${ULTRAMEMORY_HOOK_DEADLINE:-9}"
+case "$um_deadline" in ''|*[!0-9]*) um_deadline=9 ;; esac
 curl_rc=0
-response="$(printf '%s' "$body" | curl -s --max-time "${ULTRAMEMORY_HOOK_DEADLINE:-9}" -w '\n%{http_code}' -X POST "$API_BASE/api/v1/capture" \
+response="$(printf '%s' "$body" | curl -s --max-time "$um_deadline" -w '\n%{http_code}' -X POST "$API_BASE/api/v1/capture" \
   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
   --data @- 2>/dev/null)" || { curl_rc=$?; response=""; }
 http_code="${response##*$'\n'}"
@@ -220,7 +226,7 @@ try:
     body = json.load(sys.stdin)
 except Exception:
     sys.exit(1)
-sys.exit(0 if isinstance(body, dict) and "detail" in body else 1)' 2>/dev/null; then
+sys.exit(0 if isinstance(body, dict) and isinstance(body.get("detail"), str) else 1)' 2>/dev/null; then
     hook_log dead_key
     exit 0
   fi

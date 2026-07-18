@@ -149,15 +149,17 @@ def main():
         return
     scope = os.environ.get("UM_SCOPE", "").strip()
     cache = load_cache()
+    # E1 (1.9.6): budget is computed ABOVE the cache check so the verified-retry body
+    # below can reference it on BOTH the memo-hit and miss paths.
+    try:
+        budget = int(os.environ.get("ULTRAMEMORY_HOOK_BUDGET") or 2000)
+    except Exception:
+        budget = 2000
 
     # (b) memo first: an identical query within 5 minutes renders from cache — zero HTTP.
     data = cache.memo_get(query, scope, None) if cache else None
     ST["cache"] = isinstance(data, dict)  # T3: a memo hit logs as cache_hit
     if not isinstance(data, dict):
-        try:
-            budget = int(os.environ.get("ULTRAMEMORY_HOOK_BUDGET") or 2000)
-        except Exception:
-            budget = 2000
         seen = sorted(cache.seen_get(session_id)) if cache else []
         # (c) preview-tier request: the server renders non-policy facts as one-liners under a
         # tight budget (whole [COMPANY POLICY] cards exempt); exclude_ids dedupes fact_ids this
@@ -177,7 +179,7 @@ def main():
         # T1: primary request never exceeds min(6, remaining) of the deadline budget.
         remaining = deadline - (time.monotonic() - t0)
         try:
-            with urllib.request.urlopen(r, timeout=min(6, remaining)) as resp:
+            with urllib.request.urlopen(r, timeout=min(6, max(0.5, remaining))) as resp:
                 advisory = resp.headers.get("X-Limit-State") or ""
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
@@ -198,7 +200,10 @@ def main():
                     dead_key = False
             if dead_key:
                 ST["outcome"] = "dead_key"
-                marker = os.path.join(os.environ.get("TMPDIR") or "/tmp", "ultramemory-deadkey-" + session_id)
+                # E5 (1.9.6): empty session_id falls back to a STABLE constant (once per
+                # session semantics) — a pid fallback would spam the notice every invocation.
+                marker = os.path.join(os.environ.get("TMPDIR") or "/tmp",
+                                      "ultramemory-deadkey-" + (session_id or "nosession"))
                 if not os.path.exists(marker):
                     msg = ("[UltraMemory] API key rejected (HTTP %d) — recall is offline. "
                            "Rotate your key at https://app.ultramemory.us" % e.code)
@@ -260,8 +265,15 @@ def main():
                 try:
                     import urllib.error  # noqa: F401
                     import urllib.request
-                    vbody = dict(req)
-                    vbody["verified"] = True
+                    # E1 (1.9.6): rebuild the retry body from in-scope state — NEVER dict(req)
+                    # (a miss-branch local; NameError on memo hits silently killed the retry).
+                    # exclude_ids = the SESSION-SEEN set: exclude_ids shapes briefing rendering,
+                    # so excluding the CURRENT results would gut the verified block.
+                    vbody = {"query": query, "k": 5, "mode": "preview", "verified": True,
+                             "max_characters": budget,
+                             "exclude_ids": (sorted(cache.seen_get(session_id)) if cache else [])}
+                    if scope:
+                        vbody["scope"] = scope
                     vreq = urllib.request.Request(
                         os.environ.get("UM_API_BASE", "https://api.ultramemory.us").rstrip("/") + "/api/v1/recall/gated",
                         data=json.dumps(vbody).encode("utf-8"),
@@ -269,7 +281,7 @@ def main():
                         method="POST",
                     )
                     ST["retry"] = 1  # T3: verified retry attempted this run
-                    with urllib.request.urlopen(vreq, timeout=remaining) as vresp:
+                    with urllib.request.urlopen(vreq, timeout=max(0.5, remaining)) as vresp:
                         vdata = json.loads(vresp.read().decode("utf-8"))
                     if isinstance(vdata, dict) and vdata.get("decision") in ("answer", "verify"):
                         vblock = (vdata.get("context_block") or "").strip()

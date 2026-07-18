@@ -49,6 +49,24 @@ else: os.remove(f)
 PY
 }
 
+strip_env_key(){ # file key created(true|false)
+  local file="$1" key="$2" created="$3"; [ -f "$file" ] || return 0
+  if [ "$DRYRUN" = 1 ]; then printf '  [dry-run] strip env %s from %s\n' "$key" "$file"; return 0; fi
+  python3 - "$file" "$key" "$created" <<'PY'
+import json,os,sys
+f,key,created=sys.argv[1],sys.argv[2],sys.argv[3]=="true"
+try: d=json.load(open(f))
+except Exception: sys.exit(0)
+env=d.get("env")
+if isinstance(env,dict): env.pop(key,None)
+if isinstance(env,dict) and not env: d.pop("env",None)
+if created and not d:
+    os.remove(f)
+else:
+    tmp=f+".tmp"; open(tmp,"w").write(json.dumps(d,indent=2)+"\n"); os.replace(tmp,f); os.chmod(f,0o600)
+PY
+}
+
 strip_claude_block(){ # file
   local file="$1"; [ -f "$file" ] || return 0
   grep -q 'UltraMemory harness (managed)' "$file" 2>/dev/null || return 0
@@ -73,11 +91,25 @@ if command -v claude >/dev/null 2>&1; then
 else c_warn "claude CLI not found — skipping MCP removal"; fi
 
 # 2. settings.json hook entries (project + global)
-for sub in recall-first-hook.sh harness-gate.sh harness-reminder.sh; do
+for sub in recall-first-hook.sh harness-gate.sh harness-reminder.sh capture-hook.sh recall-rule-reminder.sh; do
   remove_settings_hook "./.claude/settings.json" "$sub"
   remove_settings_hook "$HOME/.claude/settings.json" "$sub"
 done
 c_ok "settings.json hook entries stripped"
+
+# 2b. env keys the kit wrote into settings files (envkey manifest entries; strips ONLY our key —
+# old manifests have no envkey list and degrade to the legacy `file` rm loop unchanged)
+read_envkeys(){ python3 - "$MANIFEST" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+for e in d.get("items",{}).get("envkey",[]):
+    if isinstance(e,dict) and e.get("path") and e.get("key"):
+        print("%s\t%s\t%s"%(e["path"],e["key"],"true" if e.get("created") else "false"))
+PY
+}
+read_envkeys | while IFS=$'\t' read -r ep ek ec; do
+  [ -n "$ep" ] && { strip_env_key "$ep" "$ek" "$ec"; c_ok "stripped env $ek from $ep"; }
+done
 
 # 3. managed CLAUDE.md block
 strip_claude_block "./CLAUDE.md"

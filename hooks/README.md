@@ -28,7 +28,7 @@ injection at 9,500 characters — see [Token economics](#token-economics-preview
    # still works — it just skips the cache)
    cp cache.py .claude/hooks/cache.py
    ```
-2. Export your UltraMemory key (get one free at https://ultramemory.us — no credit card required):
+2. Export your UltraMemory key (get one free at https://ultramemory.io — no credit card required):
    ```bash
    export ULTRAMEMORY_API_KEY=um_YOUR_KEY
    # optional, defaults to https://api.ultramemory.us
@@ -249,6 +249,17 @@ prompt-submit budget while still returning the whole grounded briefing.
 
 ## Changelog
 
+- **1.9.6** — Hermes provider fix + kit hardening. **Hermes shim:** `ultramemory enable` now plants
+  a provider shim at `$HERMES_HOME/plugins/ultramemory/` (Hermes discovers memory providers by
+  directory scan — Python entry points are not consulted) with a site-packages `sys.path` fallback
+  for separate-venv Hermes installs; new `ultramemory disable` removes the shim and resets
+  `memory.provider` to `builtin`. **Honest uninstall:** the installer records the exact env-key edit
+  it makes and `uninstall.sh` surgically strips only that key — customer settings survive.
+  **Tier-1 registration:** the installer registers (or key-refreshes) the UltraMemory MCP via
+  `claude mcp add`. **Hook fixes:** the verified retry excludes only session-seen ids (so it no
+  longer guts the verified briefing and can fire on cache-hit turns); timeout floors on the clamped
+  requests; bounded non-blocking cache lock (fail-soft on contention). **Auto-capture wired** in the
+  installer + plugin (Stop, timeout 20) with a `ULTRAMEMORY_CAPTURE=off` kill-switch.
 - **1.9.5** — Robustness: doctor checks global `~/.claude/CLAUDE.md` + `settings.json` (kills
   false WARN/FAIL on global installs); WAF-403 no longer misreported as a dead key (dead_key =
   401, or 403 with the API's JSON detail body); recall query clamped to the server's 4096-char

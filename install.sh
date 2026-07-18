@@ -14,7 +14,7 @@
 # execute a partial script. Idempotent; writes a manifest so `--uninstall` removes only what it added.
 set -uo pipefail
 
-KIT_VERSION="1.9.5"
+KIT_VERSION="1.9.6"
 REPO_RAW="${ULTRAMEMORY_KIT_RAW:-https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main}"
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 UM_DIR="$HOME/.ultramemory"
@@ -76,13 +76,14 @@ ensure_gitignore(){ # add a line to ./.gitignore if in a git repo and not presen
 }
 
 # ---- python helpers (jq isn't stock on macOS; python3 is what the hook needs anyway) ----
-merge_settings_hook(){ # file event command  — idempotently add a command hook
-  local file="$1" event="$2" cmd="$3"
+merge_settings_hook(){ # file event command [timeout]  — idempotently add a command hook
+  local file="$1" event="$2" cmd="$3" tmo="${4:-}"
   if [ "$DRYRUN" = 1 ]; then printf '  [dry-run] wire %s -> %s in %s\n' "$event" "$cmd" "$file"; return 0; fi
   mkdir -p "$(dirname "$file")"
-  python3 - "$file" "$event" "$cmd" <<'PY'
+  python3 - "$file" "$event" "$cmd" "$tmo" <<'PY'
 import json,os,sys
-f,event,cmd=sys.argv[1],sys.argv[2],sys.argv[3]
+f,event,cmd,tmo=sys.argv[1],sys.argv[2],sys.argv[3],sys.argv[4]
+timeout=int(tmo) if tmo else (600 if event=="Stop" else 20)
 d={}
 if os.path.exists(f):
     try: d=json.load(open(f)) or {}
@@ -92,23 +93,26 @@ for g in arr:
     for hk in g.get("hooks",[]):
         if hk.get("command")==cmd:
             open(f,"w").write(json.dumps(d,indent=2)+"\n"); sys.exit(0)
-arr.append({"matcher":"","hooks":[{"type":"command","command":cmd,"timeout":600 if event=="Stop" else 20}]})
+arr.append({"matcher":"","hooks":[{"type":"command","command":cmd,"timeout":timeout}]})
 tmp=f+".tmp"; open(tmp,"w").write(json.dumps(d,indent=2)+"\n"); os.replace(tmp,f)
 PY
 }
-set_env_key(){ # file KEY value  — write env var into a (git-ignored) settings json, chmod 600
+set_env_key(){ # file KEY value  — write env var into a (git-ignored) settings json, chmod 600.
+  # Prints "created" (file didn't exist) or "modified" on STDOUT for the envkey manifest record;
+  # the [dry-run] line goes to STDERR so `$( )` capture stays clean.
   local file="$1" k="$2" v="$3"
-  if [ "$DRYRUN" = 1 ]; then printf '  [dry-run] set %s in %s (env)\n' "$k" "$file"; return 0; fi
+  if [ "$DRYRUN" = 1 ]; then printf '  [dry-run] set %s in %s (env)\n' "$k" "$file" >&2; return 0; fi
   python3 - "$file" "$k" "$v" <<'PY'
 import json,os,sys
 f,k,v=sys.argv[1],sys.argv[2],sys.argv[3]
-d={}
-if os.path.exists(f):
+d={}; existed=os.path.exists(f)
+if existed:
     try: d=json.load(open(f)) or {}
     except Exception: d={}
 d.setdefault("env",{})[k]=v
 tmp=f+".tmp"; open(tmp,"w").write(json.dumps(d,indent=2)+"\n"); os.replace(tmp,f)
 os.chmod(f,0o600)
+print("modified" if existed else "created")
 PY
 }
 recall_rule_paragraph(){ # the active-recall rule text (mirrors agent-kit/templates/CLAUDE.md.tmpl:22-30)
@@ -185,11 +189,14 @@ flush_manifest(){
   python3 - "$MANIFEST" "$KIT_VERSION" "$TIER" "$MFTMP" <<'PY'
 import json,sys
 mf,ver,tier,tmp=sys.argv[1:5]
-items={"backup":[],"file":[],"mcp":[],"skilldir":[],"settings":[]}
+items={"backup":[],"file":[],"mcp":[],"skilldir":[],"settings":[],"envkey":[]}
 try:
     for ln in open(tmp):
         t,v=ln.rstrip("\n").split("\t",1); items.setdefault(t,[]).append(v)
 except FileNotFoundError: pass
+# envkey rows are "path\tkey\tcreated|modified" -> objects the uninstaller strips surgically
+items["envkey"]=[{"path":p,"key":k,"created":c=="created"}
+                 for p,k,c in (v.split("\t") for v in items["envkey"] if v.count("\t")==2)]
 json.dump({"kit_version":ver,"tier":tier,"items":items},open(mf,"w"),indent=2); open(mf,"a").write("\n")
 PY
   c_ok "manifest -> $MANIFEST"
@@ -197,18 +204,33 @@ PY
 
 # ---------------------------------------------------------------- tiers ----
 install_tier2(){
+  # Tier 1 — register the UltraMemory MCP (the eight memory tools). Idempotent + key-refresh.
+  if command -v claude >/dev/null 2>&1; then
+    if claude mcp get ultramemory 2>/dev/null | grep -q "api.ultramemory.us/mcp"; then
+      act "refresh ultramemory MCP registration" -- claude mcp remove ultramemory
+    fi
+    mcp_add ultramemory add --transport http ultramemory https://api.ultramemory.us/mcp \
+      --header "Authorization: Bearer $KEY"
+  else
+    c_warn "claude CLI not found — register UltraMemory manually:"
+    printf '  claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \\\n    --header "Authorization: Bearer <your um_ key>"\n'
+  fi
   c_info "Tier 2 — Turbo Token Saver (project-scoped recall hook + cache)"
   act "mkdir -p ./.claude/hooks" -- mkdir -p ./.claude/hooks
   if [ "$DRYRUN" != 1 ]; then
     fetch agent-kit/hooks/recall-first-hook.sh ./.claude/hooks/recall-first-hook.sh
     fetch agent-kit/hooks/cache.py ./.claude/hooks/cache.py
-    chmod +x ./.claude/hooks/recall-first-hook.sh
+    fetch agent-kit/hooks/capture-hook.sh ./.claude/hooks/capture-hook.sh
+    chmod +x ./.claude/hooks/recall-first-hook.sh ./.claude/hooks/capture-hook.sh
     record file "./.claude/hooks/recall-first-hook.sh"; record file "./.claude/hooks/cache.py"
-  else printf '  [dry-run] fetch recall-first-hook.sh + cache.py into ./.claude/hooks\n'; fi
+    record file "./.claude/hooks/capture-hook.sh"
+  else printf '  [dry-run] fetch recall-first-hook.sh + cache.py + capture-hook.sh into ./.claude/hooks\n'; fi
   merge_settings_hook "./.claude/settings.json" UserPromptSubmit '${CLAUDE_PROJECT_DIR}/.claude/hooks/recall-first-hook.sh'
   record settings "UserPromptSubmit:recall-first-hook.sh"
-  set_env_key "./.claude/settings.local.json" ULTRAMEMORY_API_KEY "$KEY"
-  record file "./.claude/settings.local.json"
+  merge_settings_hook "./.claude/settings.json" Stop '${CLAUDE_PROJECT_DIR}/.claude/hooks/capture-hook.sh' 20
+  record settings "Stop:capture-hook.sh"
+  created="$(set_env_key "./.claude/settings.local.json" ULTRAMEMORY_API_KEY "$KEY")"
+  record envkey "$(printf '%s\t%s\t%s' "./.claude/settings.local.json" "ULTRAMEMORY_API_KEY" "${created:-modified}")"
   ensure_gitignore ".claude/settings.local.json"
   # Ship the active-recall CLAUDE.md rule alongside the hook (idempotent: place_claude_rule
   # no-ops if the managed sentinel is already present, so a later Tier-3 run won't double-insert).

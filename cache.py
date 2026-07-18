@@ -71,11 +71,13 @@ def _memo_key(query, scope, space) -> str:
 
 
 def _open_locked(path: str) -> int:
-    """Open cache.json (creating it 0600) and take an exclusive flock.
+    """Open cache.json (creating it 0600) and take an exclusive NON-BLOCKING flock.
 
-    Robust to the atomic tmp+rename of a concurrent writer replacing the inode between
-    our open() and flock(): re-check that the locked fd still IS the file at `path`,
-    retrying a few times before settling for a best-effort lock.
+    E6 (1.9.6): LOCK_NB with a bounded retry (5 x 0.02 s) — a lock still contended after
+    the retries RAISES, and ``_with_cache`` degrades to its default (fail-soft miss)
+    instead of blocking the host tool behind a stuck writer. Also robust to the atomic
+    tmp+rename of a concurrent writer replacing the inode between our open() and flock():
+    re-check that the locked fd still IS the file at `path`.
     """
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -85,7 +87,11 @@ def _open_locked(path: str) -> int:
     if fcntl is None:  # pragma: no cover - non-POSIX platforms
         return fd
     for _ in range(5):
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            time.sleep(0.02)  # contended — bounded retry, never an unbounded wait
+            continue
         try:
             if os.fstat(fd).st_ino == os.stat(path).st_ino:
                 return fd  # we hold the lock on the live inode
@@ -93,8 +99,8 @@ def _open_locked(path: str) -> int:
             pass  # file vanished mid-race; reopen and retry
         os.close(fd)
         fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-    fcntl.flock(fd, fcntl.LOCK_EX)  # give up on the race guard; still serialize writers
-    return fd
+    os.close(fd)
+    raise OSError("cache.json lock contended after bounded retries")  # -> _with_cache default
 
 
 def _load(fd: int) -> dict:

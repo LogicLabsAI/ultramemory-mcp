@@ -18,7 +18,7 @@ SRC="${ULTRAMEMORY_HARNESS_SRC:-$HOME/.claude}"
 KIT="$REPO/agent-kit"
 ALLOW="$SCRIPT_DIR/kit-manifest.in"
 MANIFEST="$KIT/kit-manifest.json"
-KIT_VERSION="1.9.5"
+KIT_VERSION="1.9.6"
 MODE="${1:-export}"
 
 sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
@@ -78,7 +78,8 @@ cat > "$KIT/templates/settings.hooks.json" <<'JSON'
   "hooks": {
     "UserPromptSubmit": [
       { "matcher": "", "hooks": [
-        { "type": "command", "command": "$HOME/.claude/hooks/recall-first-hook.sh", "timeout": 10 },
+        { "type": "command", "command": "$HOME/.claude/hooks/recall-first-hook.sh", "timeout": 20 },
+        { "type": "command", "command": "$HOME/.claude/hooks/recall-rule-reminder.sh", "timeout": 5 },
         { "type": "command", "command": "$HOME/.claude/hooks/harness-reminder.sh", "timeout": 5 }
       ] }
     ],

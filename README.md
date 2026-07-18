@@ -20,7 +20,7 @@ claude mcp add --transport http ultramemory https://api.ultramemory.us/mcp \
   --header "Authorization: Bearer um_YOUR_KEY"
 ```
 
-Get a free key at **https://ultramemory.us** — no credit card required.
+Get a free key at **https://ultramemory.io** — no credit card required.
 
 ### Or connect with OAuth — no key needed
 
@@ -180,7 +180,7 @@ deterministic recall-first injection *attempt* before every prompt (fail-open, t
      && curl -fsSL https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main/cache.py -o .claude/hooks/cache.py \
      && chmod +x .claude/hooks/recall-first-hook.sh
    ```
-2. Export your key (get one free at https://ultramemory.us — no credit card required):
+2. Export your key (get one free at https://ultramemory.io — no credit card required):
    ```bash
    export ULTRAMEMORY_API_KEY=um_YOUR_KEY
    ```
@@ -297,8 +297,21 @@ connector. It hooks the agent lifecycle to **auto-inject recall before each turn
 **auto-capture** durable facts from the conversation, so memory works without the model having to
 choose to call a tool. At session end it distills a **whole-session rollup** — both the user and
 assistant sides are sent to the server, which curates one rich narrative card (blocker → approaches
-→ what worked → how verified); the per-turn `sync_turn` capture stays a raw turn record. Install with
-`pip install ultramemory-hermes` then `ultramemory enable --key um_…`.
+→ what worked → how verified); the per-turn `sync_turn` capture stays a raw turn record.
+
+Install in three steps:
+
+1. `pip install ultramemory-hermes`
+2. `ultramemory enable --key um_…` — writes the key to `$HERMES_HOME/.env`, plants the provider
+   shim at `$HERMES_HOME/plugins/ultramemory/`, and selects `memory.provider: ultramemory` in the
+   Hermes config.
+3. `hermes memory status` — verify the provider shows as installed.
+
+Hermes discovers memory providers by **directory scan** of `$HERMES_HOME/plugins/` — it does not
+consult Python entry points — so the shim planted by `ultramemory enable` is what makes the
+pip-installed provider visible to Hermes. Setting environment variables alone CANNOT install the
+provider: without `ultramemory enable` there is no shim on disk for the scan to find. To undo, run
+`ultramemory disable` — it removes the shim and resets `memory.provider` to `builtin`.
 
 ## Memory spaces (Teams)
 

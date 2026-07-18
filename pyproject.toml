@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 # `ultramemory` module + `ultramemory` command the rest of the docs reference.
 [project]
 name = "ultramemory-hermes"
-version = "1.9.5"
+version = "1.9.6"
 description = "UltraMemory — self-learning, metamemory-gated long-term memory provider for Hermes Agent (and any MCP client). One API key = your own private tenant."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -26,20 +26,12 @@ classifiers = [
 dependencies = ["httpx"]
 
 [project.urls]
-Homepage = "https://ultramemory.us"
-Documentation = "https://ultramemory.us"
+Homepage = "https://ultramemory.io"
+Documentation = "https://ultramemory.io/docs"
 
 # Console entry point: `ultramemory enable --key um_…`
 [project.scripts]
 ultramemory = "ultramemory.cli:main"
-
-# Hermes discovers providers via the `register(ctx)` entry point. Hermes' own discovery mechanism
-# isn't published in this repo, so this group name is an ASSUMPTION ("hermes.memory_providers")
-# chosen to be sensible and namespaced; if Hermes expects a different group, rename this table only
-# — the target `ultramemory:register` is stable. Bundled/copied installs (the README's primary
-# path) don't need this entry point at all; it's for the pip-installed path.
-[project.entry-points."hermes.memory_providers"]
-ultramemory = "ultramemory:register"
 
 # This directory IS the `ultramemory` package (its __init__.py is the module body), but the source
 # files sit flat at the build root rather than in an `ultramemory/` subdir. Map them explicitly
