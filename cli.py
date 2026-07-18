@@ -376,7 +376,29 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         line("ok", "hook file", f"{hook_path} (executable)")
 
     # 3) settings registration + configured timeout (WARN below the 1.9.4 floor of 20).
-    if reg_cmd:
+    #    Project-local registration is preferred; the global ~/.claude/settings.json (same JSON
+    #    shape) is consulted only when no local entry exists.
+    reg_global = False
+    if not reg_cmd:
+        home_settings = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+        groups = (_read_json(home_settings).get("hooks") or {}).get("UserPromptSubmit") or []
+        for group in groups if isinstance(groups, list) else []:
+            if not isinstance(group, dict):
+                continue
+            for hk in group.get("hooks") or []:
+                if isinstance(hk, dict) and "recall-first-hook.sh" in str(hk.get("command", "")):
+                    reg_cmd, reg_timeout, reg_global = str(hk.get("command")), hk.get("timeout"), True
+                    break
+            if reg_cmd:
+                break
+    if reg_cmd and reg_global:
+        if reg_timeout is None:
+            line("ok", "registration", "UserPromptSubmit (global ~/.claude/settings.json, no timeout set — Claude Code default applies)")
+        elif isinstance(reg_timeout, (int, float)) and reg_timeout < 20:
+            line("WARN", "registration", f"UserPromptSubmit (global ~/.claude/settings.json, timeout {reg_timeout}) < 20 — raise it to 20")
+        else:
+            line("ok", "registration", f"UserPromptSubmit (global ~/.claude/settings.json, timeout {reg_timeout})")
+    elif reg_cmd:
         if reg_timeout is None:
             line("ok", "registration", f"UserPromptSubmit in {reg_file} (no timeout set — Claude Code default applies)")
         elif isinstance(reg_timeout, (int, float)) and reg_timeout < 20:
@@ -387,7 +409,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         line(
             "FAIL",
             "registration",
-            f"no UserPromptSubmit entry for recall-first-hook.sh in {settings_json} or {settings_local}",
+            f"no UserPromptSubmit entry for recall-first-hook.sh in {settings_json}, {settings_local}, or ~/.claude/settings.json",
         )
 
     # 4) cache.py adjacent to the hook (the hook also accepts the parent dir; without either,
@@ -402,18 +424,22 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     else:
         line("WARN", "cache.py", f"missing next to the hook ({adjacent}) — token-economics caching is disabled")
 
-    # 5) CLAUDE.md recall-rule sentinel (active-recall half of the trifecta).
+    # 5) CLAUDE.md recall-rule sentinel (active-recall half of the trifecta) — the project-local
+    #    ./CLAUDE.md or the global ~/.claude/CLAUDE.md both satisfy it.
     sentinel = "Recall first — actively"
-    has_rule = False
-    try:
-        with open("CLAUDE.md", "r", encoding="utf-8") as f:
-            has_rule = sentinel in f.read()
-    except OSError:
-        has_rule = False
-    if has_rule:
-        line("ok", "CLAUDE.md", f'recall rule present ("{sentinel}")')
+    rule_file: Optional[str] = None
+    for md_path in ("CLAUDE.md", os.path.join(os.path.expanduser("~"), ".claude", "CLAUDE.md")):
+        try:
+            with open(md_path, "r", encoding="utf-8") as f:
+                if sentinel in f.read():
+                    rule_file = md_path
+                    break
+        except OSError:
+            continue
+    if rule_file:
+        line("ok", "CLAUDE.md", f'recall rule present in {rule_file} ("{sentinel}")')
     else:
-        line("WARN", "CLAUDE.md", f'recall-rule sentinel "{sentinel}" not in ./CLAUDE.md — hook is passive-only (re-run the installer)')
+        line("WARN", "CLAUDE.md", f'recall-rule sentinel "{sentinel}" not in ./CLAUDE.md or ~/.claude/CLAUDE.md — hook is passive-only (re-run the installer)')
 
     # 6) python3 on PATH (the hook and cache.py both need it).
     py3 = shutil.which("python3")

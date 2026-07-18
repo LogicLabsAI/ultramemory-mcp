@@ -176,7 +176,7 @@ PY
 # `systemMessage` field (shown to the user, non-blocking — never exit 2 / decision:block) and the
 # Nth-turn snapshot nudge below is skipped (its memory_write would hit the same paused-writes limit).
 curl_rc=0
-response="$(printf '%s' "$body" | curl -s --max-time 8 -w '\n%{http_code}' -X POST "$API_BASE/api/v1/capture" \
+response="$(printf '%s' "$body" | curl -s --max-time "${ULTRAMEMORY_HOOK_DEADLINE:-9}" -w '\n%{http_code}' -X POST "$API_BASE/api/v1/capture" \
   -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" \
   --data @- 2>/dev/null)" || { curl_rc=$?; response=""; }
 http_code="${response##*$'\n'}"
@@ -205,12 +205,25 @@ print(json.dumps({"systemMessage": "[UltraMemory] " + detail.strip()}))' 2>/dev/
   exit 0
 fi
 
-# T2 (1.9.4): dead key (401/403) — exit BEFORE the Nth-turn snapshot nudge below (mirror of the
-# 429 early-exit above), so a dead key never solicits doomed memory_write calls. The key is
-# NEVER echoed, in whole or in part.
-if [ "$http_code" = "401" ] || [ "$http_code" = "403" ]; then
+# T2 (1.9.4): dead key — exit BEFORE the Nth-turn snapshot nudge below (mirror of the 429
+# early-exit above), so a dead key never solicits doomed memory_write calls. The key is NEVER
+# echoed, in whole or in part. A dead key is a 401, or a 403 whose body parses as the API's own
+# JSON {"detail": ...} auth/suspension shape; a 403 WITHOUT that shape (e.g. a WAF block page)
+# keeps um_outcome="http_403" and falls through to the normal hook_log path below.
+if [ "$http_code" = "401" ]; then
   hook_log dead_key
   exit 0
+fi
+if [ "$http_code" = "403" ]; then
+  if printf '%s' "${response%$'\n'*}" | python3 -c 'import json, sys
+try:
+    body = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if isinstance(body, dict) and "detail" in body else 1)' 2>/dev/null; then
+    hook_log dead_key
+    exit 0
+  fi
 fi
 
 # --- Every Nth turn: in-band session-snapshot nudge (Stop additionalContext, CC >= 2.1.163) ---

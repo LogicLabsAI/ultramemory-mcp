@@ -249,6 +249,11 @@ prompt-submit budget while still returning the whole grounded briefing.
 
 ## Changelog
 
+- **1.9.5** — Robustness: doctor checks global `~/.claude/CLAUDE.md` + `settings.json` (kills
+  false WARN/FAIL on global installs); WAF-403 no longer misreported as a dead key (dead_key =
+  401, or 403 with the API's JSON detail body); recall query clamped to the server's 4096-char
+  max; capture hook honors `ULTRAMEMORY_HOOK_DEADLINE` (default 9s); installer writes hooks
+  atomically (temp + rename).
 - **1.9.4** — Hook observability: the silent-death class is eliminated. **Deadline-aware
   timeouts:** the recall hook is governed by `ULTRAMEMORY_HOOK_DEADLINE` (default 9s) — the primary
   request is clamped to `min(6, remaining)`, the verified retry runs only when enough deadline

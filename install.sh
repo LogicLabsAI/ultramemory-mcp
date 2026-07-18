@@ -14,7 +14,7 @@
 # execute a partial script. Idempotent; writes a manifest so `--uninstall` removes only what it added.
 set -uo pipefail
 
-KIT_VERSION="1.9.4"
+KIT_VERSION="1.9.5"
 REPO_RAW="${ULTRAMEMORY_KIT_RAW:-https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main}"
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 UM_DIR="$HOME/.ultramemory"
@@ -56,10 +56,13 @@ act(){ local desc="$1"; shift; [ "$1" = "--" ] && shift
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd 2>/dev/null || echo "")"
 SRCBASE=""
 [ -n "$SCRIPT_DIR" ] && [ -d "$SCRIPT_DIR/agent-kit" ] && SRCBASE="$SCRIPT_DIR"
-fetch(){ # relpath dest
-  local rel="$1" dest="$2"; mkdir -p "$(dirname "$dest")"
-  if [ -n "$SRCBASE" ] && [ -f "$SRCBASE/$rel" ]; then cp "$SRCBASE/$rel" "$dest"
-  else curl -fsSL "$REPO_RAW/$rel" -o "$dest"; fi
+fetch(){ # relpath dest — write to a same-dir temp, then atomically rename (new inode; a running hook keeps its old bytes)
+  local rel="$1" dest="$2" dir tmp; dir="$(dirname "$dest")"; mkdir -p "$dir"
+  tmp="$(mktemp "$dir/.um-fetch.XXXXXX")" || return 1
+  if [ -n "$SRCBASE" ] && [ -f "$SRCBASE/$rel" ]; then cp "$SRCBASE/$rel" "$tmp"
+  else curl -fsSL "$REPO_RAW/$rel" -o "$tmp" || { rm -f "$tmp"; return 1; }; fi
+  chmod 644 "$tmp"
+  mv -f "$tmp" "$dest"
 }
 
 # manifest accumulation (temp lines: "type\tvalue"), flushed to JSON at the end.

@@ -3,7 +3,7 @@
   "name": "io.github.LogicLabsAI/ultramemory-mcp",
   "title": "UltraMemory",
   "description": "Cross-tool memory for your AI that recalls first every turn and admits when it doesn't know.",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "websiteUrl": "https://ultramemory.io",
   "repository": {
     "url": "https://github.com/LogicLabsAI/ultramemory-mcp",

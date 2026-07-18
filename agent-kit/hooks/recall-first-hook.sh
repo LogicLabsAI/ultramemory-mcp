@@ -144,7 +144,7 @@ def main():
             session_id = str(evt.get("session_id") or "")
     except Exception:
         pass
-    query = query.strip()
+    query = query.strip()[:4096]  # server RecallRequest.query max_length (schemas.py) — prevents 422s and oversized bodies
     if not query:
         return
     scope = os.environ.get("UM_SCOPE", "").strip()
@@ -182,12 +182,21 @@ def main():
                 data = json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             ST["outcome"] = "http_%d" % e.code
-            # T2 (1.9.4): 401/403 = revoked/rotated key. Surface it ONCE per session (one
+            # T2 (1.9.4): dead key = 401, or a 403 whose body parses as the API JSON
+            # {"detail": "<string>"} auth/suspension shape. Surface it ONCE per session (one
             # additionalContext line + one stderr line) instead of dying silently; dedupe via a
             # TMPDIR marker file keyed by session_id (same pattern as the capture-hook
             # counter_file). The key itself is NEVER printed, in whole or in part (Rule 6 /
-            # hooks README privacy contract).
-            if e.code in (401, 403):
+            # hooks README privacy contract). A 403 WITHOUT that shape (e.g. a WAF block page)
+            # is NOT a dead key: it keeps the http_403 outcome, emits NO dead-key notice, and
+            # returns below as a plain HTTP failure (fail-open, no injection).
+            dead_key = e.code == 401
+            if not dead_key and e.code == 403:
+                try:  # e.read() may be empty or non-JSON — any trouble means not a dead key
+                    dead_key = isinstance(json.loads(e.read().decode("utf-8")).get("detail"), str)
+                except Exception:
+                    dead_key = False
+            if dead_key:
                 ST["outcome"] = "dead_key"
                 marker = os.path.join(os.environ.get("TMPDIR") or "/tmp", "ultramemory-deadkey-" + session_id)
                 if not os.path.exists(marker):

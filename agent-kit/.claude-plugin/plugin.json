@@ -1,6 +1,6 @@
 {
   "name": "ultramemory-kit",
-  "version": "1.9.4",
+  "version": "1.9.5",
   "description": "UltraMemory Agent Kit — recall-first memory (Turbo Token Saver), the grounding/checklist harness, and optional MCP + Playwright setup for Claude Code. Bring your own UltraMemory API key.",
   "author": {
     "name": "LogicLabsAI",
