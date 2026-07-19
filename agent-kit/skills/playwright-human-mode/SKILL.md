@@ -42,6 +42,56 @@ one step at a time, you are drifting — stop and batch. This is the rule, not a
 suggestion: serial click-by-click wastes round-trips and the human's supervision;
 the value is at decisions, not mechanics.
 
+## ⌨️ Canvas / xterm terminal composers (HARD RULE)
+
+Some web apps (agent dashboards like Hermes, web IDEs, ttyd/wetty consoles) render
+their chat/console in an **xterm.js CANVAS** with a hidden `.xterm-helper-textarea`
+as the real input. These break the normal form playbook in three ways — handle ALL three:
+
+1. **`fill()` + `press('Enter')` can silently NOT submit.** The text sits at the
+   prompt looking sent while the app state stays `ready`. NEVER assume a terminal
+   send landed: after Enter, **verify the state changed** (spinner/status text like
+   "musing/working", the message moving into scrollback, a queue counter) before
+   waiting on a response. If the status is still `ready` and your text is at the
+   prompt, it did NOT send — refocus and press Enter again.
+2. **Overlay buttons intercept pointer clicks** (e.g. a floating "copy last
+   response" button covering the helper textarea) → `locator.click()` times out
+   with "subtree intercepts pointer events". Do NOT fight it with force-clicks:
+   focus programmatically — `input.evaluate(el => el.focus())` — then drive with
+   **real keystrokes** (`page.keyboard.type(...)` / `press('Enter')`). Keyboard
+   events go to the focused element and bypass the overlay entirely.
+3. **The canvas is invisible to `textContent`/a11y snapshots.** Terminal output
+   can ONLY be read from pixels — `browser_take_screenshot` + vision — or from a
+   side surface (a sessions/history page, logs page, or "copy last response"
+   button). Don't poll `textContent` and conclude "no output"; that's reading the
+   wrong layer.
+
+One-message pattern that works: `evaluate(el.focus())` → `keyboard.type(msg, {delay: 15})` →
+`keyboard.press('Enter')` → short wait → read the STATUS indicator (screenshot if
+canvas) and confirm the send before entering any wait-for-response loop.
+
+Two more xterm gotchas: (a) **throttle typing** — full-speed `keyboard.type()` can
+DROP/mangle characters in an xterm (websocket keystroke race); always pass
+`{delay: 10–20}` and verify the echoed line matches before Enter; (b) **clear a
+mangled line with `Control+U`** (kill-line) — don't try select-all/backspace loops,
+and don't send a corrupted prompt hoping the agent will parse it.
+
+**You have the ENTIRE keyboard — use all of it.** Playwright's keyboard is a full
+physical keyboard: every printable key, `Enter`, `Tab`, `Escape`, `Backspace`,
+arrows, Home/End/PageUp/PageDown, F-keys, and modifier chords
+(`Control+C`, `Meta+V`, `Shift+Tab`, `Alt+…`, `ControlOrMeta+…`). When a UI resists
+pointer clicks (overlays, canvas, focus traps), switch to keyboard-first driving:
+Tab/Shift+Tab to move focus, Enter/Space to activate, Escape to dismiss, arrows for
+menus/lists, Ctrl+C/Ctrl+D/Ctrl+L for terminal control sequences in web consoles.
+This explicitly includes **Shift, Command (⌘ = `Meta` on macOS), Control, Option/Alt,
+and any COMBINED chord** — two- and three-modifier combos alike:
+`Meta+A` (select all), `Meta+C`/`Meta+V` (copy/paste), `Meta+Z`/`Shift+Meta+Z`
+(undo/redo), `Meta+Shift+P` (command palettes), `Shift+Enter` (newline-without-send
+in chat composers), `Meta+Enter` (send in some apps), `Shift+ArrowRight`/`Shift+Home`
+(selection), `Alt+ArrowLeft` (word-jump), etc. Use `ControlOrMeta+…` when the same
+shortcut is Ctrl on Linux/Windows and ⌘ on macOS.
+A human at a keyboard is the model — anything they can key, key it.
+
 ---
 
 The **primary co-working browser is Playwright MCP, run VISIBLY on your local
