@@ -227,7 +227,7 @@ every item before calling a multi-file build "done". Full details: [`agent-kit/R
 bash <(curl -fsSL https://ultramemory.io/kit.sh)
 # non-interactive: bash <(curl -fsSL https://ultramemory.io/kit.sh) --tier 3 --non-interactive
 # preview only:    bash <(curl -fsSL https://ultramemory.io/kit.sh) --dry-run
-# or via the CLI:  uvx ultramemory-hermes kit install
+# or via the CLI:  uvx --from ultramemory-hermes ultramemory kit install
 ```
 
 **Claude Code plugin marketplace** (advanced / team — bundles skills + subagents + hooks + MCP in one enable):
@@ -302,6 +302,7 @@ assistant sides are sent to the server, which curates one rich narrative card (b
 Install in three steps:
 
 1. `pip install ultramemory-hermes`
+   If pip reports externally-managed-environment (PEP 668): pipx install ultramemory-hermes — or uv tool install ultramemory-hermes.
 2. `ultramemory enable --key um_…` — writes the key to `$HERMES_HOME/.env`, plants the provider
    shim at `$HERMES_HOME/plugins/ultramemory/`, and selects `memory.provider: ultramemory` in the
    Hermes config.

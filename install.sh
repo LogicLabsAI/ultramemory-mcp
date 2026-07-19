@@ -14,7 +14,7 @@
 # execute a partial script. Idempotent; writes a manifest so `--uninstall` removes only what it added.
 set -uo pipefail
 
-KIT_VERSION="1.9.6"
+KIT_VERSION="1.9.7"
 REPO_RAW="${ULTRAMEMORY_KIT_RAW:-https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main}"
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 UM_DIR="$HOME/.ultramemory"
@@ -70,7 +70,7 @@ MFTMP=""; record(){ [ "$DRYRUN" = 1 ] && return 0; printf '%s\t%s\n' "$1" "$2" >
 backup(){ [ -f "$1" ] && { act "backup $1 -> $1.bak.$TS" -- cp "$1" "$1.bak.$TS"; record backup "$1.bak.$TS"; }; }
 
 ensure_gitignore(){ # add a line to ./.gitignore if in a git repo and not present
-  local line="$1"; [ -d .git ] || return 0
+  local line="$1"; { [ -e .git ] || git rev-parse --is-inside-work-tree >/dev/null 2>&1; } || return 0
   grep -qxF "$line" .gitignore 2>/dev/null && return 0
   act "gitignore += $line" -- sh -c "printf '%s\n' '$line' >> .gitignore"
 }

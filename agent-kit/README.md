@@ -34,7 +34,7 @@ It prompts for your UltraMemory key, lets you pick **Tier 2** (Turbo Token Saver
 Non-interactive: `bash <(curl -fsSL https://ultramemory.io/kit.sh) --tier 3 --non-interactive`
 (reads `ULTRAMEMORY_API_KEY` from the environment). Preview first with `--dry-run`.
 
-You can also drive it from the published CLI: `uvx ultramemory-hermes kit install`.
+You can also drive it from the published CLI: `uvx --from ultramemory-hermes ultramemory kit install`.
 
 ### 2. Claude Code plugin marketplace (advanced / team)
 
@@ -69,7 +69,7 @@ On every other turn it is a no-op — it never runs your tests on unrelated work
 ## Uninstall
 
 ```bash
-bash <(curl -fsSL https://ultramemory.io/kit.sh) --uninstall     # or: uvx ultramemory-hermes kit uninstall
+bash <(curl -fsSL https://ultramemory.io/kit.sh) --uninstall     # or: uvx --from ultramemory-hermes ultramemory kit uninstall
 ```
 
 Uninstall is **manifest-driven** (`~/.ultramemory/install-manifest.json`): it removes only what the

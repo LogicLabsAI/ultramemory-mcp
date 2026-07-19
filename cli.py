@@ -46,7 +46,7 @@ def _hermes_home() -> str:
     try:  # prefer Hermes' own resolver when it's importable
         from hermes_constants import get_hermes_home
 
-        return get_hermes_home()
+        return os.fspath(get_hermes_home())  # str even when the resolver yields a pathlib.Path
     except Exception:
         return os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
 
@@ -252,7 +252,7 @@ def _cmd_enable(args: argparse.Namespace) -> int:
         )
         return 2
 
-    hermes_home = (args.hermes_home or _hermes_home()).rstrip("/") or _hermes_home()
+    hermes_home = os.fspath(args.hermes_home or _hermes_home()).rstrip("/") or os.fspath(_hermes_home())
     os.makedirs(hermes_home, exist_ok=True)
 
     # 1) secret -> $HERMES_HOME/.env (never the JSON)
@@ -274,7 +274,10 @@ def _cmd_enable(args: argparse.Namespace) -> int:
                 if rc != 0:
                     print("  WARN: Hermes' interpreter cannot import ultramemory —")
                     print("        the shim's sys.path fallback should cover it; if `hermes memory status`")
-                    print("        still shows NOT installed, run: pipx inject hermes-agent ultramemory-hermes")
+                    if "pipx" in hpy:  # pipx-managed Hermes -> inject into its venv
+                        print("        still shows NOT installed, run: pipx inject hermes-agent ultramemory-hermes")
+                    else:  # uv / plain-venv Hermes -> install into ITS interpreter
+                        print(f"        still shows NOT installed, run: uv pip install --python {hpy} ultramemory-hermes")
         except Exception:
             pass
 
@@ -320,7 +323,7 @@ def _cmd_enable(args: argparse.Namespace) -> int:
 
 def _cmd_disable(args: argparse.Namespace) -> int:
     import shutil as _sh
-    hermes_home = (getattr(args, "hermes_home", None) or _hermes_home()).rstrip("/") or _hermes_home()
+    hermes_home = os.fspath(getattr(args, "hermes_home", None) or _hermes_home()).rstrip("/") or os.fspath(_hermes_home())
     plugin_dir = os.path.join(hermes_home, "plugins", "ultramemory")
     removed = os.path.isdir(plugin_dir)
     if removed:
@@ -340,8 +343,9 @@ def _cmd_kit(args: argparse.Namespace) -> int:
     """Run the UltraMemory Agent Kit installer / uninstaller / exporter.
 
     ``install`` / ``uninstall`` run the shell scripts from a local checkout when present (``uvx``
-    from a source tree), else download them from the pinned repo (the ``uvx ultramemory-hermes``
-    path). ``export`` / ``check`` are maintainer tools and require the source checkout.
+    from a source tree), else download them from the pinned repo (the
+    ``uvx --from ultramemory-hermes ultramemory`` path — the entry point is ``ultramemory``).
+    ``export`` / ``check`` are maintainer tools and require the source checkout.
     """
     import subprocess
     import tempfile
@@ -455,6 +459,7 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     if reg_cmd:
         proj = os.environ.get("CLAUDE_PROJECT_DIR") or "."
         cand = reg_cmd.replace("${CLAUDE_PROJECT_DIR}", proj).replace("$CLAUDE_PROJECT_DIR", proj)
+        cand = os.path.expanduser(os.path.expandvars(cand))  # global regs use $HOME/~ (.claude/...)
         if os.path.isfile(cand):
             hook_path = cand
     if not os.path.isfile(hook_path):
