@@ -1,0 +1,18 @@
+{
+  "name": "ultramemory",
+  "version": "1.9.7",
+  "description": "One memory across Claude, ChatGPT, Cursor, Gemini CLI, Codex & Hermes — recalls first every turn and says \"I don't know\" instead of guessing. Every recall passes an anti-confabulation gate (answer | verify | abstain).",
+  "author": {
+    "name": "LogicLabsAI"
+  },
+  "homepage": "https://ultramemory.io",
+  "repository": "https://github.com/LogicLabsAI/ultramemory-mcp",
+  "license": "Apache-2.0",
+  "logo": "assets/ultramemory-icon-400.png",
+  "category": "productivity",
+  "keywords": [
+    "memory",
+    "mcp",
+    "agent-memory"
+  ]
+}

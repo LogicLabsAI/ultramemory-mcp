@@ -1,0 +1,20 @@
+{
+  "name": "ultramemory",
+  "interface": {
+    "displayName": "UltraMemory"
+  },
+  "plugins": [
+    {
+      "name": "ultramemory",
+      "source": {
+        "source": "local",
+        "path": "./plugins/ultramemory"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

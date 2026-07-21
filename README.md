@@ -82,6 +82,8 @@ Before answering, actively call the UltraMemory memory_recall (or search) MCP to
 EOF
 ```
 
+Or use Cursor's official one-click deeplink (add your Bearer key afterwards in `~/.cursor/mcp.json`): `cursor://anysphere.cursor-deeplink/mcp/install?name=ultramemory&config=eyJ1cmwiOiJodHRwczovL2FwaS51bHRyYW1lbW9yeS51cy9tY3AifQ==`
+
 **Codex** — one paste: registers the MCP server and writes the active-recall rule to `AGENTS.md`:
 
 ```bash

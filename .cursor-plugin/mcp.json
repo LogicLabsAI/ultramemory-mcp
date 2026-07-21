@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "ultramemory": {
+      "url": "https://api.ultramemory.us/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ULTRAMEMORY_API_KEY}"
+      }
+    }
+  },
+  "variables": {
+    "type": "object",
+    "properties": {
+      "ULTRAMEMORY_API_KEY": {
+        "type": "string",
+        "sensitive": true,
+        "description": "Your UltraMemory API key (um_...). Get one at https://app.ultramemory.us/app/connect"
+      }
+    },
+    "required": ["ULTRAMEMORY_API_KEY"]
+  }
+}

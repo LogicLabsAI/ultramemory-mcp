@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ultramemory": {
+      "url": "https://api.ultramemory.us/mcp",
+      "bearer_token_env_var": "ULTRAMEMORY_API_KEY"
+    }
+  }
+}
