@@ -265,11 +265,21 @@ Full parameter-level reference: https://ultramemory.io/docs/tools/
 
 ## Other connection surfaces
 
+**Start in one click — connect UltraMemory with OAuth on Claude, ChatGPT, or Perplexity. No keys, no setup.** The hosted server speaks **OAuth 2.1 (PKCE)** end-to-end, so the browser-based clients sign in without an API key; the terminal/CLI clients further down drive the same endpoint with an `um_` key.
+
+**Endpoint:** `https://api.ultramemory.us/mcp` (Streamable HTTP) · **Auth:** OAuth 2.1 (PKCE) for the browser connectors, or `Authorization: Bearer um_<key>` for CLI clients.
+
+### OAuth-first (one click, no key)
+
+- **claude.ai / Claude Desktop** — Settings → Connectors → **Add custom connector** → URL `https://api.ultramemory.us/mcp` → sign in when prompted. No terminal, no rule file.
+- **ChatGPT** — Settings → Apps & Connectors → Developer Mode → Create → URL `https://api.ultramemory.us/mcp` → Auth = API key or OAuth. Read (recall/search) works on **Plus/Pro developer mode**; writes worked in our testing, but OpenAI's connector docs are in flux and conflict on write support there, so treat write as best-effort on Plus/Pro. **Business/Enterprise/Edu** workspaces get full read + write officially. Model note: the **Instant** model works with MCP; the **Pro reasoning** model currently disables MCP.
+- **Perplexity** — *newer and in flux; requires a paid plan (Pro, Max, or Enterprise).* Settings → Connectors → **Add a connector** → **Remote / Custom MCP server** → Server URL `https://api.ultramemory.us/mcp` → Auth = API key (paste your `um_` key) or OAuth 2.0. Custom MCP connectors are not available on Free, and there is no one-click marketplace submission yet — the connector is user-pasted.
+
+### Key-based surfaces
+
 Terminal/CLI clients (Claude Code, Gemini CLI, Cursor, Codex, Windsurf, Cline, OpenClaw, VS Code): use the one-paste installs in [Install options](#install-options).
 
-**Endpoint:** `https://api.ultramemory.us/mcp` (Streamable HTTP) · **Auth:** `Authorization: Bearer um_<key>`
-
-**Claude Desktop (mcp-remote bridge):**
+**Claude Desktop (mcp-remote bridge, key instead of OAuth):**
 ```json
 { "mcpServers": { "ultramemory": {
   "command": "npx",
@@ -280,15 +290,42 @@ Terminal/CLI clients (Claude Code, Gemini CLI, Cursor, Codex, Windsurf, Cline, O
 
 Hermes: see [Hermes deep integration](#hermes-deep-integration).
 
-**ChatGPT:** Settings → Apps & Connectors → Developer Mode → Create → URL
-`https://api.ultramemory.us/mcp` → Auth = API key. (Plus/Pro = recall-only.)
-
 **curl / REST:**
 ```bash
 curl -s -X POST https://api.ultramemory.us/api/v1/recall \
   -H "Authorization: Bearer um_YOUR_KEY" -H "Content-Type: application/json" \
   -d '{"query":"what do you know about my project","k":5}'
 ```
+
+## OAuth vs Plugin — which path?
+
+Two ways to bring UltraMemory to a tool; you can start with the first and graduate to the second:
+
+- **OAuth / MCP connector (recommended, easiest).** One-click or one-paste. You get the eight memory tools on any MCP client — recall-first grounding and honest abstention — with zero local setup. Best for getting started and for browser clients (claude.ai, ChatGPT, Perplexity) that can't run local hooks.
+- **Plugin / Extension (power users, bundled).** A single installable bundle that ships the MCP connector **plus** the recall-first rule and, where the platform supports it, the Turbo Token Saver hook and the Agent Kit harness. More capable and one install, but platform-specific.
+
+> Want to stop burning tokens? The UltraMemory Plugin (one-line install) cut token use ~70% in our testing. Want that PLUS your project locked on persistent grounded truth — fewer iterations, faster delivery, and no tokens wasted on drift? Add the UltraMemory Agent Kit. *Results may vary.*
+
+## What's a Plugin?
+
+A **Plugin** (some platforms call it an *extension*) is a one-click bundle that packages several UltraMemory pieces into a single install: the memory connector (the eight tools), the recall-first rule/skill, and — on platforms that support them — the Turbo Token Saver hook and the `checklist-bound-execution` harness (skills + sub-agents). Instead of pasting a connector and a rule separately, you install one unit.
+
+The token-saving hook that cut per-turn spend **~70% in our testing (measured 2026-07-05)** and the harness sub-agents only run in agent runtimes that execute local hooks/sub-agents — **Claude Code, Cowork, Hermes, and the Cline CLI.** Browser chat clients (claude.ai, ChatGPT, Perplexity) run the connector's tools and rules but do **not** run local hooks or sub-agents, so on those surfaces a Plugin's value is the bundled connector + rule, not the hook/harness. *Results may vary. This content is informational and not a guarantee of outcome.*
+
+### Per-platform Plugin / Extension mechanism
+
+| Platform | Native bundle concept | How UltraMemory rides it |
+|---|---|---|
+| Claude Code / claude.ai | **Plugins** (`.claude-plugin`) | The UltraMemory Agent Kit plugin: `/plugin marketplace add LogicLabsAI/ultramemory-mcp` → `/plugin install ultramemory-kit@ultramemory`. Bundles MCP + recall-first hook + harness skills/sub-agents. |
+| Cursor | **Plugins** (Rules/Skills/Subagents/Commands/MCP/Hooks) — Cursor Marketplace + cursor.directory | Connect the hosted MCP server now (Cursor may force an OAuth login and ignore a static bearer); a full Cursor plugin bundle mirrors the agent-kit. |
+| Gemini CLI | **extensions** (`gemini extensions`, `gemini-extension.json`) | Plain MCP connector today (`gemini mcp add -t http …`); a Gemini extension repo is the bundle equivalent. |
+| OpenAI Codex | **Plugins** (`.codex-plugin/plugin.json`) | Remote MCP connector in `config.toml`; a Codex plugin bundle mirrors the agent-kit. |
+| VS Code | **Agent plugins** (preview) + Extensions | Remote MCP server in `mcp.json`; VS Code also auto-detects the Claude plugin format. |
+| Cline | **Plugins** (`cline plugin install`) — CLI/SDK/Kanban only today | Remote MCP server on all surfaces; a Cline-native plugin adds the bundle on the CLI. |
+| OpenClaw | **Plugins** (native + Claude-compatible bundles) | Native MCP connector; can also install the Claude-format agent-kit bundle. |
+| Hermes | **Plugins** + **Skills** (memory-provider kind) | The `ultramemory-hermes` memory-provider plugin — see [Hermes deep integration](#hermes-deep-integration). |
+| Windsurf | *No unified AI bundle* — MCP servers + Rules + Workflows | Hosted remote MCP server + a `.devin/rules/` recall-first rule (Windsurf's own "Plugins" are editor extensions, a different thing). |
+| Perplexity | *No unified plugin* — Connectors (MCP) + Skills, installed separately; paid | Custom remote MCP connector (Pro/Max/Enterprise), optionally paired with a Perplexity Computer Skill carrying the recall-first playbook. |
 
 ## Hermes deep integration
 
