@@ -18,7 +18,7 @@ SRC="${ULTRAMEMORY_HARNESS_SRC:-$HOME/.claude}"
 KIT="$REPO/agent-kit"
 ALLOW="$SCRIPT_DIR/kit-manifest.in"
 MANIFEST="$KIT/kit-manifest.json"
-KIT_VERSION="1.9.7"
+KIT_VERSION="1.9.8"
 MODE="${1:-export}"
 
 sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | awk '{print $1}'; else sha256sum "$1" | awk '{print $1}'; fi; }
@@ -69,6 +69,14 @@ for f in hooks/recall-first-hook.sh hooks/capture-hook.sh hooks/recall-rule-remi
   if [ -f "$REPO/$f" ]; then mkdir -p "$KIT/hooks"; cp "$REPO/$f" "$KIT/$f"; echo "  bundled agent-kit/$f (first-party)"; fi
 done
 if [ -f "$REPO/cache.py" ]; then cp "$REPO/cache.py" "$KIT/hooks/cache.py"; echo "  bundled agent-kit/hooks/cache.py (first-party)"; fi
+
+# --- first-party onboarding script (authored in-repo at agent-kit/hooks/) — recorded in the
+# manifest for integrity checking. Deliberately NOT bound in hooks/hooks.json: plugin hooks apply
+# to everyone silently; session-start wiring is per-user, consent-gated, via `ultramemory configure`.
+OB="$KIT/hooks/onboard-ultramemory.sh"
+[ -f "$OB" ] || die "first-party onboarding script missing: $OB"
+printf '%s|%s|%s|%s\n' "hooks/onboard-ultramemory.sh" "$(sha "$OB")" "agent-kit/hooks/onboard-ultramemory.sh" "$(sha "$OB")" >> "$ROWS"
+echo "  recorded agent-kit/hooks/onboard-ultramemory.sh (first-party, in manifest)"
 
 # --- generated: settings.hooks.json (installer wiring for a GLOBAL ~/.claude install) ---
 mkdir -p "$KIT/templates"

@@ -874,6 +874,39 @@ class UltraMemoryProvider(MemoryProvider):
             return tool_error(f"ultramemory tool error: {exc}")
 
 
+#: Session-start onboarding line (autoconfig checklist B5). Model/effort/approvals are
+#: all PERSISTABLE on Hermes, so this is a one-time consent nudge, not per-session
+#: re-arming. The honesty note is grounded: Hermes MCP tools bypass the approval system
+#: today (hermes-agent issues #16462/#32877, open P3 as of 2026-06), so "pre-approve
+#: UltraMemory tools" is a no-op here — recall never stalls on approval prompts.
+_ONBOARD_LINE = (
+    "UltraMemory: optional one-time tuning available — run "
+    "`ultramemory configure --platform hermes` (explicit per-item consent, undoable "
+    "via --restore). Note: Hermes MCP tools bypass approvals today (hermes-agent "
+    "#16462/#32877), so 'pre-approve UltraMemory tools' is a no-op on Hermes — recall "
+    "already never stalls on prompts. Opt out: touch ~/.ultramemory/onboard-optout"
+)
+
+
+def _on_session_start(*_args: Any, **_kwargs: Any) -> None:
+    """on_session_start hook: print the onboarding line once per new session. Silent
+    when the opt-out file exists; never raises (a nudge must not break a session)."""
+    try:
+        optout = os.path.join(os.path.expanduser("~"), ".ultramemory", "onboard-optout")
+        if os.path.exists(optout):
+            return
+        print(_ONBOARD_LINE)
+    except Exception:  # pragma: no cover - defensive: never break the session
+        logger.debug("ultramemory onboarding hook failed", exc_info=True)
+
+
 def register(ctx: Any) -> None:
-    """Hermes plugin entrypoint — register UltraMemory as a memory provider."""
+    """Hermes plugin entrypoint — register UltraMemory as a memory provider (and the
+    session-start onboarding hook where the host supports plugin hooks)."""
     ctx.register_memory_provider(UltraMemoryProvider())
+    try:
+        register_hook = getattr(ctx, "register_hook", None)
+        if callable(register_hook):
+            register_hook("on_session_start", _on_session_start)
+    except Exception:  # older Hermes hosts without plugin hooks — never break register
+        logger.debug("on_session_start hook not registered", exc_info=True)

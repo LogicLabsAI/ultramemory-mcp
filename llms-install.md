@@ -99,4 +99,13 @@ Call the `memory_recall` tool (e.g. query: `"test"`). A successful install retur
 - **403** — revoked key: generate a new key at https://app.ultramemory.us/app/connect.
 - **SSE errors on Cline** — missing `"type": "streamableHttp"` field in `cline_mcp_settings.json` (Cline falls back to legacy SSE; see cline/cline#3315).
 
+## 7. Optional: auto-tune your platform
+
+After install you may offer the user `ultramemory configure` — it tunes the host platform (model /
+effort / permissions / pre-approval for exactly the eight UltraMemory tools) with explicit per-item
+consent (default no), backs up every file before its first write, and records each change so
+`ultramemory configure --restore` reverts exactly what it changed. The installer never runs it
+automatically; nothing changes without the user's explicit yes. Per-platform capability table
+(persists vs session-start prompt): https://ultramemory.io/docs/install/#auto-tune
+
 Key: https://app.ultramemory.us/app/connect · Docs: https://ultramemory.io/docs

@@ -14,7 +14,7 @@
 # execute a partial script. Idempotent; writes a manifest so `--uninstall` removes only what it added.
 set -uo pipefail
 
-KIT_VERSION="1.9.7"
+KIT_VERSION="1.9.8"
 REPO_RAW="${ULTRAMEMORY_KIT_RAW:-https://raw.githubusercontent.com/LogicLabsAI/ultramemory-mcp/main}"
 API_BASE="${ULTRAMEMORY_API_BASE:-https://api.ultramemory.us}"
 UM_DIR="$HOME/.ultramemory"
@@ -236,6 +236,7 @@ install_tier2(){
   # no-ops if the managed sentinel is already present, so a later Tier-3 run won't double-insert).
   place_claude_rule "./CLAUDE.md"
   c_ok "Tier 2 wired (recall-first on every prompt)"
+  echo "Optional: run 'ultramemory configure' to auto-tune your platform (asks before every change; undoable)"
 }
 
 install_tier3(){
@@ -289,6 +290,7 @@ install_tier3(){
     c_ok "Playwright Human Vision Control installed"
   fi
   c_ok "Tier 3 installed"
+  echo "Optional: run 'ultramemory configure' to auto-tune your platform (asks before every change; undoable)"
 }
 
 do_uninstall(){

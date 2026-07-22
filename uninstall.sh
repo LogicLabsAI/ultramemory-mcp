@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # UltraMemory Agent Kit — uninstaller. Manifest-driven: removes ONLY what install.sh recorded in
 # ~/.ultramemory/install-manifest.json (MCP servers, hook/skill/agent files, settings.json hook
-# entries, the managed CLAUDE.md block), restores the .bak.<ts> copies it made, and never touches
+# entries, the managed CLAUDE.md block), reverts `ultramemory configure` setting rows to their
+# recorded prior values, restores the .bak.<ts> copies it made, and never touches
 # your own rules or config. Idempotent (missing = skip).
 #
 #   uninstall.sh              # remove
@@ -67,6 +68,43 @@ else:
 PY
 }
 
+restore_setting_rows(){ # revert manifest "setting" rows (written by `ultramemory configure`) to
+  # their recorded prior values — surgical, key-level (mirrors strip_env_key: only the keys WE set
+  # are touched; the user may have changed other keys since, and those are left alone). Rows are
+  # {"type":"setting","platform":…,"path":…,"key":…,"prior":…,"new":…,"created":…} where prior/new
+  # are {"value":v} or {"absent":true}. Non-plain-JSON targets defer to `ultramemory configure
+  # --restore` (the engine has format-matched writers; this standalone helper stays dependency-free).
+  python3 - "$MANIFEST" "$DRYRUN" <<'PY'
+import json,os,sys
+mf,dry=sys.argv[1],sys.argv[2]=="1"
+try: d=json.load(open(mf))
+except Exception: sys.exit(0)
+rows=[r for r in d.get("items",{}).get("setting",[]) if isinstance(r,dict) and r.get("path") and r.get("key")]
+def prior(w):  # {"absent":true} | {"value":v} -> (absent, value)
+    if isinstance(w,dict) and w.get("absent"): return True,None
+    if isinstance(w,dict) and "value" in w: return False,w["value"]
+    return False,w
+for r in reversed(rows):
+    p=os.path.expanduser(r["path"]); k=r["key"]
+    if dry: print("  [dry-run] revert %s :: %s to its recorded prior"%(p,k)); continue
+    if not os.path.exists(p): continue
+    if not p.endswith(".json"):
+        print("  ! %s: not plain JSON — run `ultramemory configure --restore` to revert %s"%(p,k)); continue
+    try: cfg=json.load(open(p))
+    except Exception: print("  ! %s unreadable — skipped %s"%(p,k)); continue
+    absent,val=prior(r.get("prior"))
+    node=cfg; parts=k.split("."); ok=isinstance(node,dict)
+    for seg in parts[:-1]:
+        node=node.get(seg) if isinstance(node,dict) else None
+        if not isinstance(node,dict): ok=False; break
+    if not ok or not isinstance(node,dict): continue
+    if absent: node.pop(parts[-1],None)
+    else: node[parts[-1]]=val
+    tmp=p+".tmp"; open(tmp,"w").write(json.dumps(cfg,indent=2)+"\n"); os.replace(tmp,p)
+    print("  restored %s :: %s"%(p,k))
+PY
+}
+
 strip_claude_block(){ # file
   local file="$1"; [ -f "$file" ] || return 0
   grep -q 'UltraMemory harness (managed)' "$file" 2>/dev/null || return 0
@@ -110,6 +148,10 @@ PY
 read_envkeys | while IFS=$'\t' read -r ep ek ec; do
   [ -n "$ep" ] && { strip_env_key "$ep" "$ek" "$ec"; c_ok "stripped env $ek from $ep"; }
 done
+
+# 2c. "setting" rows written by `ultramemory configure` — surgically revert ONLY the keys we set
+# to their recorded prior values (honest-uninstall parity; never a blind backup copy)
+restore_setting_rows
 
 # 3. managed CLAUDE.md block
 strip_claude_block "./CLAUDE.md"

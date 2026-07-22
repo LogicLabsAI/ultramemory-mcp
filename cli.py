@@ -610,6 +610,25 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _cmd_configure(args: argparse.Namespace) -> int:
+    """Optionally tune the host agent platform for UltraMemory. Thin delegate — all
+    engine logic (consent runner, safe-merge helpers, manifest "setting" rows, restore)
+    lives in autoconfig.py. Explicit per-item consent, default No; --dry-run prints the
+    plan with zero writes (silent settings modification is a marketplace blocker)."""
+    try:
+        from . import autoconfig  # installed package (`ultramemory` console script)
+    except ImportError:  # run as a flat script (dev / CI gate): `python3 cli.py configure …`
+        import autoconfig  # type: ignore
+    return autoconfig.run_configure(
+        platform=args.platform,
+        yes=args.yes,
+        items=args.items,
+        dry_run=args.dry_run,
+        model=args.model,
+        restore=args.restore,
+    )
+
+
 def _add_bool_flag(p: argparse.ArgumentParser, name: str, help_text: str) -> None:
     """Add a paired --flag/--no-flag that defaults to None (= 'leave as configured')."""
     dest = name.replace("-", "_")
@@ -681,6 +700,53 @@ def build_parser() -> argparse.ArgumentParser:
         help="also POST a 1-fact gated recall to the live API (reports 200 / 401 dead key / offline + RTT ms)",
     )
     doctor.set_defaults(func=_cmd_doctor)
+
+    configure = sub.add_parser(
+        "configure",
+        help="Optionally tune your agent platform for UltraMemory (explicit per-item consent; nothing changes without your yes)",
+    )
+    configure.add_argument(
+        "--platform",
+        choices=[
+            "claude-code",
+            "codex",
+            "gemini",
+            "cursor",
+            "cline",
+            "vscode",
+            "openclaw",
+            "hermes",
+            "windsurf",
+            "all",
+            "auto",
+        ],
+        default="auto",
+        help="platform to tune (default: auto = detect installed platforms)",
+    )
+    configure.add_argument(
+        "--yes",
+        action="store_true",
+        help="non-interactive approval (scope it with --items; without --yes a non-interactive run changes nothing and exits 2)",
+    )
+    configure.add_argument(
+        "--items",
+        help="comma-separated item names to approve non-interactively (matched against each change's key path)",
+    )
+    configure.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the plan and exit 0 — nothing is written",
+    )
+    configure.add_argument(
+        "--model",
+        help="model override to propose instead of the platform default alias",
+    )
+    configure.add_argument(
+        "--restore",
+        action="store_true",
+        help="surgically revert every configure-owned setting to its recorded prior value",
+    )
+    configure.set_defaults(func=_cmd_configure)
 
     return parser
 

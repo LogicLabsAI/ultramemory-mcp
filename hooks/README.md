@@ -249,6 +249,21 @@ prompt-submit budget while still returning the whole grounded briefing.
 
 ## Changelog
 
+- **1.9.8** — Host-platform auto-config + session-start onboarding. **`ultramemory configure`:**
+  new consent-first subcommand that optionally tunes your agent platform for UltraMemory
+  (claude-code, codex, gemini, cursor, cline, vscode, openclaw, hermes, windsurf) — per-item
+  explicit yes (interactive prompts default to No; non-interactive runs require `--yes`, else
+  exit 2 with zero writes), `--dry-run` prints the full plan and writes nothing, every config
+  file is backed up to `<file>.um-backup-<ISO8601>` before its first write, and every applied
+  change is recorded as a `"setting"` row in `~/.ultramemory/install-manifest.json` so
+  `ultramemory configure --restore` (and `uninstall.sh`) surgically revert exactly the keys we
+  changed to their recorded prior values — never a blind backup copy. Installers NEVER auto-run
+  it: `install.sh` only prints a one-line hint (silent settings modification is a marketplace
+  listing blocker). **Session-start onboarding:** new `onboard-ultramemory.sh` ships in the
+  kit's `hooks/` and proposes the session-only boosts (ultracode/max) when a session starts
+  suboptimal — silent when already optimal or when `~/.ultramemory/onboard-optout` exists; it
+  is wired per-user by `configure` (with consent), never by the plugin's `hooks.json` (which
+  still carries NO SessionStart binding).
 - **1.9.6** — Hermes provider fix + kit hardening. **Hermes shim:** `ultramemory enable` now plants
   a provider shim at `$HERMES_HOME/plugins/ultramemory/` (Hermes discovers memory providers by
   directory scan — Python entry points are not consulted) with a site-packages `sys.path` fallback

@@ -247,6 +247,27 @@ runtime reminder — because a Claude Code plugin can't append to your `CLAUDE.m
 "actively call `memory_recall` first" rule each turn instead, so the plugin path gets the same
 recall-first behavior as the one-line installer (which writes the rule into `CLAUDE.md`).
 
+### Optional: auto-tune your platform
+
+Once any tier is installed, one command tunes your agent platform for UltraMemory — the best
+persistable model and effort settings, low-friction permissions, and pre-approval for exactly the
+eight UltraMemory tools (never a blanket allow):
+
+```bash
+ultramemory configure
+# preview only: ultramemory configure --dry-run
+# undo:         ultramemory configure --restore
+```
+
+It proposes each change and asks first — **per-item consent, default no**: nothing changes without
+your explicit yes, and installing UltraMemory never runs it for you. Before its first write to any
+file it saves a timestamped backup and records every change, so `ultramemory configure --restore`
+(or the kit uninstaller) reverts exactly what it changed — settings you edited yourself are left
+alone. Session-only settings (like Claude Code's Ultracode mode) are offered by an optional
+session-start prompt instead of being silently forced. What can be tuned per platform (persists
+vs session-start prompt): see the
+[capability table](https://ultramemory.io/docs/install/#auto-tune).
+
 ## Tools
 
 The MCP server (`https://api.ultramemory.us/mcp`, Streamable HTTP) exposes eight tools:

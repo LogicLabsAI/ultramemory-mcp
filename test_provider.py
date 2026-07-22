@@ -668,3 +668,49 @@ def test_system_prompt_block_byte_stable(monkeypatch):
     assert p.system_prompt_block() == b1
     p.prefetch("what plan is Acme on?")   # state changes must not perturb the block
     assert p.system_prompt_block() == b1
+
+
+# --- autoconfig B5: session-start onboarding hook on the provider plugin entrypoint ---
+class _HookCtx:
+    """Fake Hermes plugin context (Level-A harness): records registrations."""
+    def __init__(self, with_hooks=True):
+        self.providers = []
+        self.hooks = []
+        if not with_hooks:
+            # older Hermes hosts have no register_hook at all
+            self.register_hook = None  # type: ignore[assignment]
+
+    def register_memory_provider(self, p):
+        self.providers.append(p)
+
+    def register_hook(self, event, cb):
+        self.hooks.append((event, cb))
+
+
+def test_register_adds_on_session_start_hook(monkeypatch, tmp_path, capsys):
+    """B5 Verify: provider hook registers without error in the fake-hermes harness,
+    and the callback prints the onboarding line (silent when opted out)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ctx = _HookCtx()
+    um.register(ctx)
+    assert len(ctx.providers) == 1 and ctx.providers[0].name == "ultramemory"
+    assert len(ctx.hooks) == 1
+    event, cb = ctx.hooks[0]
+    assert event == "on_session_start"
+    cb()  # prints the onboarding line (incl. the MCP-approvals honesty note)
+    out = capsys.readouterr().out
+    assert "ultramemory configure --platform hermes" in out
+    assert "#16462" in out  # honest: MCP tools bypass approvals today
+    # opt-out file silences it
+    optout = tmp_path / ".ultramemory"
+    optout.mkdir()
+    (optout / "onboard-optout").write_text("")
+    cb()
+    assert capsys.readouterr().out == ""
+
+
+def test_register_survives_host_without_register_hook():
+    """Older Hermes hosts (no ctx.register_hook) must still register the provider."""
+    ctx = _HookCtx(with_hooks=False)
+    um.register(ctx)  # must not raise
+    assert len(ctx.providers) == 1
