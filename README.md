@@ -296,7 +296,7 @@ Full parameter-level reference: https://ultramemory.io/docs/tools/
 
 - **claude.ai / Claude Desktop** — Settings → Connectors → **Add custom connector** → URL `https://api.ultramemory.us/mcp` → sign in when prompted. No terminal, no rule file.
 - **ChatGPT** — Settings → Apps & Connectors → Developer Mode → Create → URL `https://api.ultramemory.us/mcp` → Auth = API key or OAuth. Read (recall/search) works on **Plus/Pro developer mode**; writes worked in our testing, but OpenAI's connector docs are in flux and conflict on write support there, so treat write as best-effort on Plus/Pro. **Business/Enterprise/Edu** workspaces get full read + write officially. Model note: the **Instant** model works with MCP; the **Pro reasoning** model currently disables MCP.
-- **Perplexity** — *newer and in flux; requires a paid plan (Pro, Max, or Enterprise).* Settings → Connectors → **Add a connector** → **Remote / Custom MCP server** → Server URL `https://api.ultramemory.us/mcp` → Auth = API key (paste your `um_` key) or OAuth 2.0. Custom MCP connectors are not available on Free, and there is no one-click marketplace submission yet — the connector is user-pasted.
+- **Perplexity** — *paid plan required (Pro, Max, or Enterprise).* Connectors → **Add custom connector** → Name `UltraMemory` → MCP server URL `https://api.ultramemory.us/mcp` → Advanced: **OAuth** (leave Client ID/Secret blank — dynamic registration) → Add → Connect (OAuth consent). Recall runs in Search mode; **writes run in Computer mode** — mention `@UltraMemory` to bind the connector. Verified end-to-end July 2026. Not available on Free; no marketplace submission yet — the connector is user-pasted.
 
 ### Key-based surfaces
 
