@@ -297,6 +297,19 @@ Full parameter-level reference: https://ultramemory.io/docs/tools/
 - **claude.ai / Claude Desktop** — Settings → Connectors → **Add custom connector** → URL `https://api.ultramemory.us/mcp` → sign in when prompted. No terminal, no rule file.
 - **ChatGPT** — Settings → Apps & Connectors → Developer Mode → Create → URL `https://api.ultramemory.us/mcp` → Auth = API key or OAuth. Read (recall/search) works on **Plus/Pro developer mode**; writes worked in our testing, but OpenAI's connector docs are in flux and conflict on write support there, so treat write as best-effort on Plus/Pro. **Business/Enterprise/Edu** workspaces get full read + write officially. Model note: the **Instant** model works with MCP; the **Pro reasoning** model currently disables MCP.
 - **Perplexity** — *paid plan required (Pro, Max, or Enterprise).* Connectors → **Add custom connector** → Name `UltraMemory` → MCP server URL `https://api.ultramemory.us/mcp` → Advanced: **OAuth** (leave Client ID/Secret blank — dynamic registration) → Add → Connect (OAuth consent). Recall runs in Search mode; **writes run in Computer mode** — mention `@UltraMemory` to bind the connector. Verified end-to-end July 2026. Not available on Free; no marketplace submission yet — the connector is user-pasted.
+  - **Recommended — profile instructions:** Settings → Personalization → Custom instructions, paste:
+
+    ```text
+    UltraMemory (@UltraMemory) is my authoritative long-term memory connector across all my AI tools.
+
+    RECALL FIRST: On every question — not just at chat start — recall from UltraMemory before answering and ground your reply in what comes back; prefer it over built-in memory. If context might be missing, recall instead of guessing.
+
+    TOOL ROUTING: For governance, policy, or compliance questions use recall_gated — only it returns the full COMPANY POLICY briefing. If a recall comes back empty but I likely saved the fact, retry once with recall_verified before answering from general knowledge. Never invent a memory — if it's truly not there, say so plainly.
+
+    WRITES (Computer mode; mention @UltraMemory to bind): at the end of each substantial turn, distill durable takeaways (decisions, specs, names, dates, current state, next steps) and save via memory_write — each value self-contained for a zero-context reader: named entities, absolute dates, concrete numbers, 15–100 words. Skip ephemeral chatter and anything sensitive I didn't ask to keep. Confirm in one line what you saved. When I confirm or correct a recalled answer, label it with memory_feedback (pass the event_id).
+
+    Search mode is recall-only — writes aren't available there. Standing instruction; don't ask me to redefine it each session.
+    ```
 
 ### Key-based surfaces
 
