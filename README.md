@@ -300,16 +300,18 @@ Full parameter-level reference: https://ultramemory.io/docs/tools/
   - **Recommended — profile instructions:** Settings → Personalization → Custom instructions, paste:
 
     ```text
-    UltraMemory (@UltraMemory) is my authoritative long-term memory connector across all my AI tools.
+    UltraMemory (@UltraMemory) is my authoritative long-term memory across all my AI tools.
 
-    RECALL FIRST: On every question — not just at chat start — recall from UltraMemory before answering and ground your reply in what comes back; prefer it over built-in memory. If context might be missing, recall instead of guessing.
+    RECALL FIRST: On every question — not just at chat start — recall from UltraMemory before answering and ground your reply in it; prefer it over built-in memory. If context might be missing, recall instead of guessing.
 
-    TOOL ROUTING: For governance, policy, or compliance questions use recall_gated — only it returns the full COMPANY POLICY briefing. If a recall comes back empty but I likely saved the fact, retry once with recall_verified before answering from general knowledge. Never invent a memory — if it's truly not there, say so plainly. If Perplexity's own memory and UltraMemory disagree, UltraMemory is authoritative. Memories I saved from my other tools (Claude, ChatGPT, etc.) only surface via @UltraMemory or Computer mode — check there before concluding something isn't saved.
+    TOOL ROUTING: Governance/policy/compliance questions → recall_gated (only it returns the full COMPANY POLICY briefing). Expected fact comes back empty → retry once with recall_verified. Never invent a memory — if it's not there, say so. If Perplexity's own memory and UltraMemory disagree, UltraMemory wins. Memories saved from my other tools (Claude, ChatGPT, etc.) only surface via @UltraMemory or Computer mode — check there before saying it isn't saved. ATTACH RULE: for any question about my saved info, memory, or memory tools — including meta-questions — attach and query @UltraMemory instead of web-searching its docs.
 
-    WRITES (Computer mode; mention @UltraMemory to bind): at the end of each substantial turn, distill durable takeaways (decisions, specs, names, dates, current state, next steps) and save via memory_write — each value self-contained for a zero-context reader: named entities, absolute dates, concrete numbers, 15–100 words. Skip ephemeral chatter and anything sensitive I didn't ask to keep. Confirm in one line what you saved. When I confirm or correct a recalled answer, label it with memory_feedback (pass the event_id).
+    WRITES (Computer mode; @UltraMemory binds): at the end of each substantial turn, save durable takeaways (decisions, specs, names, dates, state, next steps) via memory_write — self-contained values: named entities, absolute dates, concrete numbers, 15-100 words. Skip ephemeral or sensitive items I didn't ask to keep. Confirm in one line what you saved. When I confirm or correct a recalled answer, label it via memory_feedback (event_id).
 
-    Search mode is recall-only — writes aren't available there. Standing instruction; don't ask me to redefine it each session.
+    Search mode is recall-only. Standing instruction; don't ask me to redefine it.
     ```
+
+    *Perplexity caps Custom instructions at 1,500 characters — this text is 1,455 and fits; if you add your own lines, keep the total under 1,500 or the field silently truncates.*
 
 ### Key-based surfaces
 
