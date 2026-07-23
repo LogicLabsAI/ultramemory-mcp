@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.LogicLabsAI/ultramemory-mcp",
   "title": "UltraMemory",
-  "description": "One memory for every AI — Claude, ChatGPT, Perplexity, Gemini, Cursor, OpenClaw, Hermes. Recalls first; admits when it doesn't know.",
+  "description": "One memory for every AI — Claude, ChatGPT, Perplexity, Gemini, Cursor, OpenClaw, Hermes.",
   "version": "1.9.10",
   "websiteUrl": "https://ultramemory.io",
   "repository": {
