@@ -71,9 +71,12 @@ PY
 restore_setting_rows(){ # revert manifest "setting" rows (written by `ultramemory configure`) to
   # their recorded prior values — surgical, key-level (mirrors strip_env_key: only the keys WE set
   # are touched; the user may have changed other keys since, and those are left alone). Rows are
-  # {"type":"setting","platform":…,"path":…,"key":…,"prior":…,"new":…,"created":…} where prior/new
-  # are {"value":v} or {"absent":true}. Non-plain-JSON targets defer to `ultramemory configure
-  # --restore` (the engine has format-matched writers; this standalone helper stays dependency-free).
+  # {"type":"setting","platform":…,"path":…,"key":…,"prior":…,"new":…,"created":…,
+  # "created_parents":[…]} where prior/new are {"value":v} or {"absent":true}; "created" true means
+  # the apply created the whole file; "created_parents" lists the ancestor key-paths the apply
+  # itself created (present only when non-empty). Non-plain-JSON targets defer to `ultramemory
+  # configure --restore` (the engine has format-matched writers; this standalone helper stays
+  # dependency-free).
   python3 - "$MANIFEST" "$DRYRUN" <<'PY'
 import json,os,sys
 mf,dry=sys.argv[1],sys.argv[2]=="1"
@@ -84,9 +87,24 @@ def prior(w):  # {"absent":true} | {"value":v} -> (absent, value)
     if isinstance(w,dict) and w.get("absent"): return True,None
     if isinstance(w,dict) and "value" in w: return False,w["value"]
     return False,w
+def prune(cfg,created):  # 1.9.8 parity (autoconfig _prune_created_parents): after an absent-prior
+    # leaf pop, drop the ancestor containers the APPLY ITSELF created that are now empty dicts —
+    # deepest first (an emptied child may empty its parent). Ancestors NOT listed in
+    # created_parents pre-existed the apply and are NEVER pruned; rows without the field no-op.
+    if not isinstance(created,list): return
+    for anc in sorted({str(a) for a in created if a and str(a).strip()},key=lambda a:len(a.split(".")),reverse=True):
+        segs=anc.split("."); parent=cfg
+        for seg in segs[:-1]:
+            parent=parent.get(seg) if isinstance(parent,dict) else None
+        if not isinstance(parent,dict): continue
+        if isinstance(parent.get(segs[-1]),dict) and not parent[segs[-1]]: parent.pop(segs[-1],None)
 for r in reversed(rows):
     p=os.path.expanduser(r["path"]); k=r["key"]
-    if dry: print("  [dry-run] revert %s :: %s to its recorded prior"%(p,k)); continue
+    if dry:
+        extra=""
+        if r.get("created_parents"): extra+="; would prune the created parent containers it left empty"
+        if r.get("created"): extra+="; would remove the file if left empty (the apply created it)"
+        print("  [dry-run] revert %s :: %s to its recorded prior%s"%(p,k,extra)); continue
     if not os.path.exists(p): continue
     if not p.endswith(".json"):
         print("  ! %s: not plain JSON — run `ultramemory configure --restore` to revert %s"%(p,k)); continue
@@ -98,8 +116,11 @@ for r in reversed(rows):
         node=node.get(seg) if isinstance(node,dict) else None
         if not isinstance(node,dict): ok=False; break
     if not ok or not isinstance(node,dict): continue
-    if absent: node.pop(parts[-1],None)
+    if absent:
+        node.pop(parts[-1],None); prune(cfg,r.get("created_parents"))
     else: node[parts[-1]]=val
+    if r.get("created") and isinstance(cfg,dict) and not cfg:  # mirror strip_env_key: the apply
+        os.remove(p); print("  removed %s (the apply created it; empty after restore)"%p); continue
     tmp=p+".tmp"; open(tmp,"w").write(json.dumps(cfg,indent=2)+"\n"); os.replace(tmp,p)
     print("  restored %s :: %s"%(p,k))
 PY
