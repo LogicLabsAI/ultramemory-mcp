@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 # `ultramemory` module + `ultramemory` command the rest of the docs reference.
 [project]
 name = "ultramemory-hermes"
-version = "1.9.8.1"
+version = "1.9.9"
 description = "UltraMemory — self-learning, metamemory-gated long-term memory provider for Hermes Agent (and any MCP client). One API key = your own private tenant."
 readme = "README.md"
 requires-python = ">=3.9"
