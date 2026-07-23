@@ -9,13 +9,13 @@ build-backend = "hatchling.build"
 # `ultramemory` module + `ultramemory` command the rest of the docs reference.
 [project]
 name = "ultramemory-hermes"
-version = "1.9.9"
-description = "UltraMemory — self-learning, metamemory-gated long-term memory provider for Hermes Agent (and any MCP client). One API key = your own private tenant."
+version = "1.9.10"
+description = "UltraMemory — one memory for every AI you use: Claude, ChatGPT, Perplexity, Gemini, Cursor, OpenClaw, Hermes, and any MCP client. Tell it something once and it stays told — and when it doesn't know, it says so instead of making things up. One API key = your own private tenant."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
 authors = [{ name = "UltraMemory", email = "support@ultramemory.us" }]
-keywords = ["hermes", "memory", "agent", "llm", "rag", "metamemory", "mcp"]
+keywords = ["memory", "ai-memory", "mcp", "agent", "claude", "chatgpt", "perplexity", "gemini", "cursor", "openclaw", "hermes", "cross-platform", "llm", "rag", "metamemory"]
 classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Intended Audience :: Developers",

@@ -2,7 +2,7 @@
 
 # UltraMemory — cross-tool memory for your AI
 
-One memory across Claude Code, Claude Desktop, claude.ai, Cursor, ChatGPT, Gemini CLI, and Hermes. Recalls first every turn — and is honest enough to say "I don't know" instead of making things up.
+One memory across Claude Code, Claude Desktop, claude.ai, Cursor, ChatGPT, Perplexity, Gemini CLI, OpenClaw, and Hermes. Recalls first every turn — and is honest enough to say "I don't know" instead of making things up.
 
 [![PyPI](https://img.shields.io/pypi/v/ultramemory-hermes?color=2dba4e&label=pypi%3A%20ultramemory-hermes)](https://pypi.org/project/ultramemory-hermes/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
@@ -491,7 +491,7 @@ Environment tunables:
   `CLAUDE.md` rule for the agent's own mid-reasoning lookups, that trio is the real recall-first
   guarantee.
 - **Honest about what it doesn't know.** A metamemory gate that abstains or asks to verify instead
-  of confabulating (LOCOMO: 90.2% correctly-abstained).
+  of confabulating.
 
 ## License
 

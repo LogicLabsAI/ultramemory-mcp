@@ -2,8 +2,8 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.LogicLabsAI/ultramemory-mcp",
   "title": "UltraMemory",
-  "description": "Cross-tool memory for your AI that recalls first every turn and admits when it doesn't know.",
-  "version": "1.9.9",
+  "description": "One memory for every AI — Claude, ChatGPT, Perplexity, Gemini, Cursor, OpenClaw, Hermes. Recalls first; admits when it doesn't know.",
+  "version": "1.9.10",
   "websiteUrl": "https://ultramemory.io",
   "repository": {
     "url": "https://github.com/LogicLabsAI/ultramemory-mcp",
