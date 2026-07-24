@@ -19,7 +19,9 @@
 # to the user). Other platforms' session-start events (Codex hooks.json, Gemini hooks,
 # Cursor sessionStart, Cline TaskStart, Windsurf/Devin hooks) pipe through the same
 # detector; their adapters (checklist Clusters B/C) wire this script into each
-# platform's hook config and reuse the same Claude-compatible JSON output.
+# platform's hook config. Most accept the Claude-compatible JSON as-is — but NOT all:
+# Copilot CLI honors ONLY a top-level additionalContext key, so its adapter invokes the
+# kit hooks with ULTRAMEMORY_HOOK_SHAPE=copilot to select that output shape.
 #
 # POSIX sh; needs python3 (same dependency as every other kit hook). Always exits 0 —
 # an onboarding nudge must never break a session.

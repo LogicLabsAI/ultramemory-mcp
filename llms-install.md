@@ -57,9 +57,13 @@ EOF
 
 ```bash
 python3 - <<'PY'
-import json,pathlib
+import json,pathlib,shutil,time
 p=pathlib.Path.home()/".cursor"/"mcp.json"; p.parent.mkdir(parents=True,exist_ok=True)
-d=json.loads(p.read_text()) if p.exists() else {}
+try:
+    d=json.loads(p.read_text()) if p.exists() else {}
+except ValueError:
+    b=p.with_name("mcp.json.bak-%d"%time.time()); shutil.copy2(p,b); d={}
+    print("Cursor: invalid mcp.json backed up to",b)
 d.setdefault("mcpServers",{})["ultramemory"]={"url":"https://api.ultramemory.us/mcp","headers":{"Authorization":"Bearer um_YOUR_KEY"}}
 p.write_text(json.dumps(d,indent=2))
 print("Cursor: wrote",p,"— Cursor may prompt an OAuth login; approve it (your key still attributes usage).")
@@ -92,6 +96,12 @@ Prefer keeping the key out of config.toml: replace the http_headers line with `b
 ## 5. Verify
 
 Call the `memory_recall` tool (e.g. query: `"test"`). A successful install returns a JSON `results` array (it may be empty on a fresh account).
+
+**Gemini CLI (headless):** verify with `--approval-mode yolo` — without it, headless `gemini -p` hangs forever waiting for an interactive tool-call confirmation that never arrives:
+
+```bash
+gemini --approval-mode yolo -p 'call the ultramemory memory_recall tool with query "test" and print the raw JSON result'
+```
 
 ## 6. Troubleshooting
 

@@ -2078,7 +2078,11 @@ class VSCodeAdapter(PlatformAdapter):
         cur_ss = _get_dotted(hook_data, "hooks.SessionStart")
         wired = isinstance(cur_ss, list) and "onboard-ultramemory.sh" in json.dumps(cur_ss)
         if not wired:
-            entry = {"hooks": [{"type": "command", "command": _onboard_cmd_abs()}]}
+            # A1: Copilot CLI honors ONLY top-level additionalContext (not the Claude
+            # hookSpecificOutput envelope) — ULTRAMEMORY_HOOK_SHAPE=copilot makes the kit
+            # hooks emit that shape (recall-first-hook.sh shape switch).
+            entry = {"hooks": [{"type": "command",
+                                "command": "ULTRAMEMORY_HOOK_SHAPE=copilot " + _onboard_cmd_abs()}]}
             changes.append(ProposedChange(
                 "vscode", hook_path, "hooks.SessionStart", cur_ss, [entry], "onboard-hook",
                 "SessionStart onboarding in a standalone ~/.copilot/hooks/ file (zero "

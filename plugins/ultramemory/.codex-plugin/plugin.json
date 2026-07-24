@@ -1,6 +1,6 @@
 {
   "name": "ultramemory",
-  "version": "1.9.7",
+  "version": "1.9.11",
   "description": "One memory across Claude, ChatGPT, Cursor, Gemini CLI, Codex & Hermes — recalls first every turn and says \"I don't know\" instead of guessing. Every recall passes an anti-confabulation gate (answer | verify | abstain).",
   "author": {
     "name": "LogicLabsAI",

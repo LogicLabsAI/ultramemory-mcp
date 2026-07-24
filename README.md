@@ -68,9 +68,13 @@ Prefer OAuth instead of a key? Gemini CLI also supports OAuth — add an `httpUr
 
 ```bash
 python3 - <<'PY'
-import json,pathlib
+import json,pathlib,shutil,time
 p=pathlib.Path.home()/".cursor"/"mcp.json"; p.parent.mkdir(parents=True,exist_ok=True)
-d=json.loads(p.read_text()) if p.exists() else {}
+try:
+    d=json.loads(p.read_text()) if p.exists() else {}
+except ValueError:
+    b=p.with_name("mcp.json.bak-%d"%time.time()); shutil.copy2(p,b); d={}
+    print("Cursor: invalid mcp.json backed up to",b)
 d.setdefault("mcpServers",{})["ultramemory"]={"url":"https://api.ultramemory.us/mcp","headers":{"Authorization":"Bearer um_YOUR_KEY"}}
 p.write_text(json.dumps(d,indent=2))
 print("Cursor: wrote",p,"— Cursor may prompt an OAuth login; approve it (your key still attributes usage).")

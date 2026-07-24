@@ -847,6 +847,9 @@ def test_c2_vscode_roundtrip(monkeypatch, tmp_path):
     hook_data = json.loads(hook.read_text())
     entry = hook_data["hooks"]["SessionStart"][0]
     assert entry["hooks"][0]["command"].endswith("onboard-ultramemory.sh")
+    # A1: Copilot honors ONLY top-level additionalContext — the installed invocation
+    # must pass the shape-selecting env var to the kit hooks.
+    assert entry["hooks"][0]["command"].startswith("ULTRAMEMORY_HOOK_SHAPE=copilot ")
 
     # restore is flat-key surgical too: prior "auto" back, added keys removed
     rc = autoconfig.run_configure(restore=True)
@@ -1029,6 +1032,87 @@ def test_c4_windsurf_devin_roundtrip(monkeypatch, tmp_path):
     # legacy Cascade config system UNTOUCHED — byte-identical, no new files
     assert legacy.read_text() == legacy_bytes
     assert sorted(os.listdir(legacy.parent)) == legacy_listing
+
+
+# --------------------- A1: recall-first hook output shape (Claude vs Copilot) ----
+_HOOK_RESPONSE = {
+    "decision": "answer",
+    "context_block": "hello from the shape test",
+    "results": [{"fact_id": "f-shape-1"}],
+}
+
+
+def _serve_recall():
+    """Local one-thread HTTP server standing in for POST /api/v1/recall/gated."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            body = json.dumps(_HOOK_RESPONSE).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):  # keep pytest output clean
+            pass
+
+    srv = HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv
+
+
+def _run_hook(hook_path, home, base, prompt, shape=None):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("ULTRAMEMORY_")}
+    env.update({
+        "HOME": str(home),  # sandbox ~/.ultramemory (cache + hook.log) — never real $HOME
+        "ULTRAMEMORY_API_BASE": base,
+        "ULTRAMEMORY_API_KEY": "um_test_shape",
+        "ULTRAMEMORY_HOOK_LOG": "off",
+        "no_proxy": "127.0.0.1,localhost",
+    })
+    if shape is not None:
+        env["ULTRAMEMORY_HOOK_SHAPE"] = shape
+    proc = subprocess.run(
+        ["bash", hook_path],
+        input=json.dumps({"prompt": prompt}),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+@pytest.mark.parametrize(
+    "hook",
+    [
+        os.path.join(REPO, "hooks", "recall-first-hook.sh"),
+        os.path.join(REPO, "agent-kit", "hooks", "recall-first-hook.sh"),
+    ],
+    ids=["hooks-copy", "agent-kit-copy"],
+)
+def test_a1_recall_hook_both_output_shapes(hook, tmp_path):
+    """A1: default output = Claude hookSpecificOutput envelope (unchanged);
+    ULTRAMEMORY_HOOK_SHAPE=copilot = ONLY the top-level additionalContext key."""
+    srv = _serve_recall()
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    home = tmp_path / "hookhome"
+    home.mkdir()
+    try:
+        d = _run_hook(hook, home, base, "shape default")
+        assert set(d) == {"hookSpecificOutput"}
+        assert d["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
+        assert d["hookSpecificOutput"]["additionalContext"] == _HOOK_RESPONSE["context_block"]
+        d = _run_hook(hook, home, base, "shape copilot", shape="copilot")
+        assert set(d) == {"additionalContext"}
+        assert d["additionalContext"] == _HOOK_RESPONSE["context_block"]
+    finally:
+        srv.shutdown()
 
 
 if __name__ == "__main__":  # pragma: no cover

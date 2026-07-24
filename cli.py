@@ -339,13 +339,73 @@ def _cmd_disable(args: argparse.Namespace) -> int:
     return 0
 
 
+def _kit_cursor_install(rest: list) -> int:
+    """Kit Cursor installer: register the UltraMemory MCP server in ``~/.cursor/mcp.json``
+    (the same entry the documented one-paste writes). ``--force`` handles a corrupt
+    mcp.json the same way the hardened one-paste does: back it up to
+    ``mcp.json.bak-<epoch>``, then rewrite a valid config from ``{}``. Without
+    ``--force`` an unparseable file is left untouched (exit 2) — never clobber.
+    """
+    import time
+
+    force = "--force" in rest
+    key = ""
+    for i, tok in enumerate(rest):
+        if tok == "--key" and i + 1 < len(rest):
+            key = rest[i + 1].strip()
+        elif tok.startswith("--key="):
+            key = tok.split("=", 1)[1].strip()
+    key = key or (os.environ.get("ULTRAMEMORY_API_KEY") or "").strip()
+    if not key:
+        print(
+            "error: no API key. Pass --key um_… (get one at https://ultramemory.us) "
+            "or set ULTRAMEMORY_API_KEY.",
+            file=sys.stderr,
+        )
+        return 2
+
+    path = os.path.expanduser("~/.cursor/mcp.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    data: dict = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("root is not a JSON object")
+        except ValueError:
+            data = {}
+            if not force:
+                print(
+                    f"error: {path} is not valid JSON — re-run with --force to back it up "
+                    "to mcp.json.bak-<epoch> and rewrite a valid config.",
+                    file=sys.stderr,
+                )
+                return 2
+            bak = path + ".bak-%d" % int(time.time())
+            shutil.copy2(path, bak)
+            print(f"  backed up invalid {path} -> {bak}")
+    data.setdefault("mcpServers", {})["ultramemory"] = {
+        "url": DEFAULT_BASE_URL.rstrip("/") + "/mcp",
+        "headers": {"Authorization": "Bearer " + key},
+    }
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2))
+    os.replace(tmp, path)
+    print(f"Cursor: wrote {path} — Cursor may prompt an OAuth login; approve it.")
+    return 0
+
+
 def _cmd_kit(args: argparse.Namespace) -> int:
     """Run the UltraMemory Agent Kit installer / uninstaller / exporter.
 
     ``install`` / ``uninstall`` run the shell scripts from a local checkout when present (``uvx``
     from a source tree), else download them from the pinned repo (the
     ``uvx --from ultramemory-hermes ultramemory`` path — the entry point is ``ultramemory``).
-    ``export`` / ``check`` are maintainer tools and require the source checkout.
+    ``cursor`` registers the UltraMemory MCP server in ``~/.cursor/mcp.json`` (``--force``
+    backs up + rewrites an invalid file). ``export`` / ``check`` are maintainer tools and
+    require the source checkout.
     """
     import subprocess
     import tempfile
@@ -367,6 +427,9 @@ def _cmd_kit(args: argparse.Namespace) -> int:
 
     action = args.kit_action
     passthrough = list(getattr(args, "rest", []) or [])
+
+    if action == "cursor":
+        return _kit_cursor_install(passthrough)
 
     if action in ("install", "uninstall"):
         name = "install.sh" if action == "install" else "uninstall.sh"
@@ -679,14 +742,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     kit.add_argument(
         "kit_action",
-        choices=["install", "uninstall", "export", "check"],
-        help="install (guided), uninstall (manifest-driven), export (curate ~/.claude → agent-kit/), "
-        "check (drift guard)",
+        choices=["install", "uninstall", "cursor", "export", "check"],
+        help="install (guided), uninstall (manifest-driven), cursor (register in "
+        "~/.cursor/mcp.json; --force backs up + rewrites an invalid file), "
+        "export (curate ~/.claude → agent-kit/), check (drift guard)",
     )
     kit.add_argument(
         "rest",
         nargs=argparse.REMAINDER,
-        help="extra args passed through to the installer (e.g. --tier 3 --dry-run)",
+        help="extra args passed through to the installer (e.g. --tier 3 --dry-run; "
+        "cursor: --key um_… --force)",
     )
     kit.set_defaults(func=_cmd_kit)
 

@@ -42,7 +42,13 @@ def emit(block, cap=9500):
     # (ULTRAMEMORY_HOOK_POLICY_BUDGET, default 12000) so [COMPANY POLICY] cards arrive whole.
     block = block[:cap]
     if block.strip():
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": block}}))
+        # A1 (1.9.11): Copilot CLI honors ONLY a top-level additionalContext key (copilot-cli
+        # issue #3727) — ULTRAMEMORY_HOOK_SHAPE=copilot (set by the autoconfig Copilot adapter
+        # hook entry) selects that shape; default output stays the Claude envelope, byte-identical.
+        if (os.environ.get("ULTRAMEMORY_HOOK_SHAPE") or "").strip().lower() == "copilot":
+            print(json.dumps({"additionalContext": block}))
+        else:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": block}}))
         return len(block)  # T3: injected_chars for the receipt line (output shape unchanged)
     return 0
 
