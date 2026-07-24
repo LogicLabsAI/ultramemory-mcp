@@ -6,4 +6,4 @@ package ``ultramemory``), which this package depends on. Installing
 Operated by LogicLabsAI, LLC. Docs: https://ultramemory.io/docs/
 """
 
-__version__ = "1.9.11"
+__version__ = "1.9.12"

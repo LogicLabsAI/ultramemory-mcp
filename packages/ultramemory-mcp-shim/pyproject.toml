@@ -8,13 +8,14 @@ build-backend = "setuptools.build_meta"
 # `ultramemory` import package), so `uvx --from ultramemory-mcp ultramemory ...` resolves.
 [project]
 name = "ultramemory-mcp"
-version = "1.9.11"
+version = "1.9.12"
 description = "UltraMemory — one memory for every AI you use: Claude, ChatGPT, Perplexity, Gemini, Cursor, OpenClaw, Hermes, and any MCP client. Tell it something once and it stays told — and when it doesn't know, it says so instead of making things up."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
+authors = [{ name = "LogicLabsAI, LLC", email = "support@ultramemory.us" }]
 keywords = ["agent", "ai-memory", "chatgpt", "claude", "cross-platform", "cursor", "gemini", "hermes", "llm", "mcp", "memory", "metamemory", "openclaw", "perplexity", "rag"]
-dependencies = ["ultramemory-hermes>=1.9.11"]
+dependencies = ["ultramemory-hermes>=1.9.12"]
 
 [project.scripts]
 ultramemory = "ultramemory.cli:main"

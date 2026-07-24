@@ -354,7 +354,7 @@ Two ways to bring UltraMemory to a tool; you can start with the first and gradua
 
 A **Plugin** (some platforms call it an *extension*) is a one-click bundle that packages several UltraMemory pieces into a single install: the memory connector (the eight tools), the recall-first rule/skill, and — on platforms that support them — the Turbo Token Saver hook and the `checklist-bound-execution` harness (skills + sub-agents). Instead of pasting a connector and a rule separately, you install one unit.
 
-The token-saving hook that cut per-turn spend **~70% in our testing (measured 2026-07-05)** and the harness sub-agents only run in agent runtimes that execute local hooks/sub-agents — **Claude Code, Cowork, Hermes, and the Cline CLI.** Browser chat clients (claude.ai, ChatGPT, Perplexity) run the connector's tools and rules but do **not** run local hooks or sub-agents, so on those surfaces a Plugin's value is the bundled connector + rule, not the hook/harness. *Results may vary. This content is informational and not a guarantee of outcome.*
+The token-saving hook that cut per-turn spend **~70% in our testing (measured 2026-07-05)** and the harness sub-agents only run in agent runtimes that execute local hooks/sub-agents — **Claude Code, Cowork, Hermes, and the Cline CLI.** Cowork loads the connectors enabled on your claude.ai account (synced at session start) — add UltraMemory once in claude.ai, then toggle it on in Cowork's Customize sidebar. Browser chat clients (claude.ai, ChatGPT, Perplexity) run the connector's tools and rules but do **not** run local hooks or sub-agents, so on those surfaces a Plugin's value is the bundled connector + rule, not the hook/harness. *Results may vary. This content is informational and not a guarantee of outcome.*
 
 ### Per-platform Plugin / Extension mechanism
 
@@ -362,14 +362,14 @@ The token-saving hook that cut per-turn spend **~70% in our testing (measured 20
 |---|---|---|
 | Claude Code / claude.ai | **Plugins** (`.claude-plugin`) | The UltraMemory Agent Kit plugin: `/plugin marketplace add LogicLabsAI/ultramemory-mcp` → `/plugin install ultramemory-kit@ultramemory`. Bundles MCP + recall-first hook + harness skills/sub-agents. |
 | Cursor | **Plugins** (Rules/Skills/Subagents/Commands/MCP/Hooks) — Cursor Marketplace + cursor.directory | Connect the hosted MCP server now (Cursor may force an OAuth login and ignore a static bearer); a full Cursor plugin bundle mirrors the agent-kit. |
-| Gemini CLI | **extensions** (`gemini extensions`, `gemini-extension.json`) | Plain MCP connector today (`gemini mcp add -t http …`); a Gemini extension repo is the bundle equivalent. |
+| Gemini CLI | **extensions** (`gemini extensions`, `gemini-extension.json`) | `gemini extensions install https://github.com/LogicLabsAI/ultramemory-mcp` then `gemini extensions config ultramemory` (or export `ULTRAMEMORY_API_KEY`) — this repo ships `gemini-extension.json` + `GEMINI.md`. |
 | OpenAI Codex | **Plugins** (`.codex-plugin/plugin.json`) | Remote MCP connector in `config.toml`; a Codex plugin bundle mirrors the agent-kit. |
 | VS Code | **Agent plugins** (preview) + Extensions | Remote MCP server in `mcp.json`; VS Code also auto-detects the Claude plugin format. |
-| Cline | **Plugins** (`cline plugin install`) — CLI/SDK/Kanban only today | Remote MCP server on all surfaces; a Cline-native plugin adds the bundle on the CLI. |
+| Cline | **Plugins** (`cline plugin install`) — CLI/SDK/Kanban only today | Native plugin ([`plugins/cline/`](plugins/cline/)) installs via `cline plugin install` on Cline CLI/SDK/Kanban only — the VS Code + JetBrains extensions don't run plugins yet; those users use the connector/marketplace path. |
 | OpenClaw | **Plugins** (native + Claude-compatible bundles) | Native MCP connector; can also install the Claude-format agent-kit bundle. |
 | Hermes | **Plugins** + **Skills** (memory-provider kind) | The `ultramemory-hermes` memory-provider plugin — see [Hermes deep integration](#hermes-deep-integration). |
 | Windsurf | *No unified AI bundle* — MCP servers + Rules + Workflows | Hosted remote MCP server + a `.devin/rules/` recall-first rule (Windsurf's own "Plugins" are editor extensions, a different thing). |
-| Perplexity | *No unified plugin* — Connectors (MCP) + Skills, installed separately; paid | Custom remote MCP connector (Pro/Max/Enterprise), optionally paired with a Perplexity Computer Skill carrying the recall-first playbook. |
+| Perplexity | *No unified plugin* — Connectors (MCP) + Skills, installed separately; paid | Custom remote MCP connector + the recall-first skill: download [`skills/ultramemory-perplexity/SKILL.md`](skills/ultramemory-perplexity/SKILL.md), then Perplexity Computer → Skills → Create skill → **Upload a skill** (Pro/Max/Enterprise). |
 
 ## Hermes deep integration
 

@@ -1,0 +1,22 @@
+{
+  "name": "ultramemory",
+  "version": "1.9.12",
+  "description": "UltraMemory — one memory for every AI you use (recall-first, abstains instead of guessing).",
+  "contextFileName": "GEMINI.md",
+  "settings": [
+    {
+      "name": "UltraMemory API key",
+      "description": "um_ key from https://app.ultramemory.us (Settings → API keys)",
+      "envVar": "ULTRAMEMORY_API_KEY",
+      "sensitive": true
+    }
+  ],
+  "mcpServers": {
+    "ultramemory": {
+      "httpUrl": "https://api.ultramemory.us/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ULTRAMEMORY_API_KEY}"
+      }
+    }
+  }
+}

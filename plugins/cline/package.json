@@ -1,0 +1,32 @@
+{
+  "name": "@logiclabsai/ultramemory-cline-plugin",
+  "version": "1.9.12",
+  "description": "UltraMemory for Cline — one memory for every AI you use. Registers the UltraMemory remote MCP server (recall-first, abstains instead of guessing) and the active-recall rule in every session.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "homepage": "https://ultramemory.us",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LogicLabsAI/ultramemory-mcp.git",
+    "directory": "plugins/cline"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "cline": {
+    "plugins": [
+      {
+        "paths": ["./src/index.ts"],
+        "capabilities": ["mcp", "rules"]
+      }
+    ]
+  },
+  "peerDependencies": {
+    "@cline/core": "*"
+  },
+  "peerDependenciesMeta": {
+    "@cline/core": {
+      "optional": true
+    }
+  }
+}
