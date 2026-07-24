@@ -1,6 +1,6 @@
 {
   "kit": "ultramemory-agent-kit",
-  "version": "1.9.10",
+  "version": "1.9.11",
   "files": [
     {
       "path": "agent-kit/skills/harness/SKILL.md",
@@ -81,9 +81,9 @@
     },
     {
       "path": "agent-kit/hooks/onboard-ultramemory.sh",
-      "sha256": "fd0a56ac303be2cedbbecc7e7f95ea5904ea68f33f6e8f0ec8acc60cd841a6e4",
+      "sha256": "a46f7d97eac5d54d49132534fe13be4ec13d6983aebcad42ffe74b07ac356029",
       "source": "agent-kit/hooks/onboard-ultramemory.sh",
-      "source_sha256": "fd0a56ac303be2cedbbecc7e7f95ea5904ea68f33f6e8f0ec8acc60cd841a6e4",
+      "source_sha256": "a46f7d97eac5d54d49132534fe13be4ec13d6983aebcad42ffe74b07ac356029",
       "mode": "copy"
     }
   ]
