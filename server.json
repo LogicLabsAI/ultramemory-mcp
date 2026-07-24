@@ -3,7 +3,7 @@
   "name": "io.github.LogicLabsAI/ultramemory-mcp",
   "title": "UltraMemory",
   "description": "One memory for every AI — Claude, ChatGPT, Perplexity, Gemini, Cursor, OpenClaw, Hermes.",
-  "version": "1.9.10",
+  "version": "1.9.11",
   "websiteUrl": "https://ultramemory.io",
   "repository": {
     "url": "https://github.com/LogicLabsAI/ultramemory-mcp",
